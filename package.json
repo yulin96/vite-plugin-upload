@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "A Vite plugin for uploading build artifacts.",
   "main": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.mts",
   "author": "yulinzhao",
   "license": "MIT",
   "homepage": "https://github.com/yulin96/vite-plugin-upload#readme",
@@ -17,23 +17,23 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
     "./ftp": {
-      "types": "./dist/ftp/index.d.ts",
+      "types": "./dist/ftp/index.d.mts",
       "default": "./dist/ftp/index.mjs"
     },
     "./ftp/deploy": {
-      "types": "./dist/ftp/deploy.d.ts",
+      "types": "./dist/ftp/deploy.d.mts",
       "default": "./dist/ftp/deploy.mjs"
     },
     "./oss": {
-      "types": "./dist/oss/index.d.ts",
+      "types": "./dist/oss/index.d.mts",
       "default": "./dist/oss/index.mjs"
     },
     "./oss/deploy": {
-      "types": "./dist/oss/deploy.d.ts",
+      "types": "./dist/oss/deploy.d.mts",
       "default": "./dist/oss/deploy.mjs"
     },
     "./package.json": "./package.json"

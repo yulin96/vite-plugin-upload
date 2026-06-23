@@ -11,6 +11,6 @@ export default defineConfig({
     'src/oss/cli.ts',
   ],
   dts: true,
-  exports: true,
+  exports: false,
   clean: true,
 })
