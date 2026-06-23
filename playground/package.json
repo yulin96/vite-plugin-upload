@@ -1,0 +1,13 @@
+{
+  "name": "vite-plugin-upload-playground",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "build:ftp": "vite build --mode ftp",
+    "build:oss": "vite build --mode oss"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  }
+}

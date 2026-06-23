@@ -1,21 +1,44 @@
 {
-  "name": "tsdown-starter",
+  "name": "vite-plugin-upload",
   "type": "module",
   "version": "0.0.0",
-  "description": "A starter for creating a TypeScript package.",
-  "author": "Author Name <author.name@mail.com>",
+  "description": "A Vite plugin for uploading build artifacts.",
+  "author": "yulinzhao",
   "license": "MIT",
-  "homepage": "https://github.com/author/library#readme",
+  "homepage": "https://github.com/yulin96/vite-plugin-upload#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/author/library.git"
+    "url": "git+https://github.com/yulin96/vite-plugin-upload.git"
   },
   "bugs": {
-    "url": "https://github.com/author/library/issues"
+    "url": "https://github.com/yulin96/vite-plugin-upload/issues"
   },
   "exports": {
-    ".": "./dist/index.mjs",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./ftp": {
+      "types": "./dist/ftp/index.d.ts",
+      "default": "./dist/ftp/index.mjs"
+    },
+    "./ftp/deploy": {
+      "types": "./dist/ftp/deploy.d.ts",
+      "default": "./dist/ftp/deploy.mjs"
+    },
+    "./oss": {
+      "types": "./dist/oss/index.d.ts",
+      "default": "./dist/oss/index.mjs"
+    },
+    "./oss/deploy": {
+      "types": "./dist/oss/deploy.d.ts",
+      "default": "./dist/oss/deploy.mjs"
+    },
     "./package.json": "./package.json"
+  },
+  "bin": {
+    "deploy-ftp": "./dist/ftp/cli.mjs",
+    "deploy-oss": "./dist/oss/cli.mjs"
   },
   "files": [
     "dist"
@@ -25,15 +48,59 @@
     "dev": "tsdown --watch",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
+    "build:test": "cd playground && vite build",
+    "build:test:ftp": "cd playground && vite build --mode ftp",
+    "build:test:ftp-debug": "cd playground && vite build --mode ftp-debug",
+    "build:test:oss": "cd playground && vite build --mode oss",
+    "build:test:oss-debug": "cd playground && vite build --mode oss-debug",
+    "deploy:test:ftp:api": "npm run build && npm run build:test && node playground/deploy-ftp-api.mjs",
+    "deploy:test:ftp:cli": "npm run build && npm run build:test && node dist/ftp/cli.mjs --config playground/deploy-ftp.config.mjs",
+    "deploy:test:oss:api": "npm run build && npm run build:test && node playground/deploy-oss-api.mjs",
+    "deploy:test:oss:cli": "npm run build && npm run build:test && node dist/oss/cli.mjs --config playground/deploy-oss.config.mjs",
     "release": "bumpp",
     "prepublishOnly": "pnpm run build"
   },
+  "keywords": [
+    "vite-plugin",
+    "vite",
+    "plugin",
+    "deploy",
+    "upload",
+    "ftp",
+    "oss",
+    "alioss"
+  ],
+  "peerDependencies": {
+    "vite": "^6.0.3 || ^7 || ^8"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@types/ali-oss": "^6.23.3",
+    "@types/cli-progress": "^3.11.6",
     "@types/node": "^25.6.2",
+    "@types/yazl": "^3.3.1",
     "@typescript/native-preview": "7.0.0-dev.20260509.2",
     "bumpp": "^11.1.0",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.4.3",
+    "ali-oss": "^6.23.0",
+    "basic-ftp": "^6.0.1",
+    "chalk": "^5.6.2",
+    "cli-progress": "^3.12.0",
+    "cli-truncate": "^6.0.0",
+    "dayjs": "^1.11.20",
+    "glob": "^13.0.6",
+    "log-symbols": "^7.0.1",
+    "ora": "^9.4.0",
+    "string-width": "^8.2.1",
+    "yazl": "^3.3.1"
   }
 }

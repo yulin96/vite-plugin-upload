@@ -1,9 +1,16 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  dts: {
-    tsgo: true,
-  },
+  entry: [
+    'src/index.ts',
+    'src/ftp/index.ts',
+    'src/ftp/deploy.ts',
+    'src/ftp/cli.ts',
+    'src/oss/index.ts',
+    'src/oss/deploy.ts',
+    'src/oss/cli.ts',
+  ],
+  dts: true,
   exports: true,
-  // ...config options
+  clean: true,
 })
