@@ -21,19 +21,19 @@ export type {
 }
 
 export interface VitePluginUploadOption {
-  ftp?: vitePluginDeployFtpOption | false
   oss?: vitePluginDeployOssOption | false
+  ftp?: vitePluginDeployFtpOption | false
 }
 
 export function vitePluginUpload(option: VitePluginUploadOption): Plugin[] {
   const plugins: Plugin[] = []
 
-  if (option.ftp) {
-    plugins.push(vitePluginDeployFtp(option.ftp))
-  }
-
   if (option.oss) {
     plugins.push(vitePluginDeployOss(option.oss))
+  }
+
+  if (option.ftp) {
+    plugins.push(vitePluginDeployFtp(option.ftp))
   }
 
   return plugins

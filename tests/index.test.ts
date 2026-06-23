@@ -3,13 +3,6 @@ import { vitePluginUpload } from '../src'
 
 test('creates upload plugins from enabled targets', () => {
   const plugins = vitePluginUpload({
-    ftp: {
-      host: 'example.com',
-      user: 'user',
-      password: 'password',
-      uploadPath: '/dist',
-      open: false,
-    },
     oss: {
       accessKeyId: 'id',
       accessKeySecret: 'secret',
@@ -18,7 +11,14 @@ test('creates upload plugins from enabled targets', () => {
       uploadDir: 'dist',
       open: false,
     },
+    ftp: {
+      host: 'example.com',
+      user: 'user',
+      password: 'password',
+      uploadPath: '/dist',
+      open: false,
+    },
   })
 
-  expect(plugins.map((plugin) => plugin.name)).toEqual(['vite-plugin-deploy-ftp', 'vite-plugin-deploy-oss'])
+  expect(plugins.map((plugin) => plugin.name)).toEqual(['vite-plugin-deploy-oss', 'vite-plugin-deploy-ftp'])
 })

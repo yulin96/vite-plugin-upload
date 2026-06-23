@@ -19,6 +19,18 @@ import { vitePluginDeployFtp, vitePluginDeployOss } from 'vite-plugin-upload'
 
 export default defineConfig({
   plugins: [
+    vitePluginDeployOss({
+      open: process.env.DEPLOY_OSS === '1',
+      failOnError: true,
+      accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
+      accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '',
+      bucket: process.env.OSS_BUCKET || '',
+      region: process.env.OSS_REGION || '',
+      uploadDir: 'H5/demo/prod',
+      configBase: 'https://example.com/H5/demo/prod/',
+      manifest: true,
+    }),
+
     vitePluginDeployFtp({
       open: process.env.DEPLOY_FTP === '1',
       autoUpload: true,
@@ -32,18 +44,6 @@ export default defineConfig({
       singleBack: true,
       singleBackFiles: ['index.html'],
     }),
-
-    vitePluginDeployOss({
-      open: process.env.DEPLOY_OSS === '1',
-      failOnError: true,
-      accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
-      accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '',
-      bucket: process.env.OSS_BUCKET || '',
-      region: process.env.OSS_REGION || '',
-      uploadDir: 'H5/demo/prod',
-      configBase: 'https://example.com/H5/demo/prod/',
-      manifest: true,
-    }),
   ],
 })
 ```
@@ -56,13 +56,6 @@ import { vitePluginUpload } from 'vite-plugin-upload'
 export default {
   plugins: [
     vitePluginUpload({
-      ftp: {
-        open: process.env.DEPLOY_FTP === '1',
-        host: process.env.FTP_HOST,
-        user: process.env.FTP_USER,
-        password: process.env.FTP_PASSWORD,
-        uploadPath: '/public_html',
-      },
       oss: {
         open: process.env.DEPLOY_OSS === '1',
         accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
@@ -70,6 +63,13 @@ export default {
         bucket: process.env.OSS_BUCKET || '',
         region: process.env.OSS_REGION || '',
         uploadDir: 'H5/demo/prod',
+      },
+      ftp: {
+        open: process.env.DEPLOY_FTP === '1',
+        host: process.env.FTP_HOST,
+        user: process.env.FTP_USER,
+        password: process.env.FTP_PASSWORD,
+        uploadPath: '/public_html',
       },
     }),
   ],
