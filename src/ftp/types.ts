@@ -1,3 +1,5 @@
+import type { AccessOptions } from 'basic-ftp'
+
 export interface BaseOption {
   uploadPath: string | string[]
   singleBackFiles?: string[]
@@ -24,6 +26,8 @@ export interface FtpConfig {
   user?: string
   password?: string
   alias?: string
+  secure?: AccessOptions['secure']
+  secureOptions?: AccessOptions['secureOptions']
 }
 
 export type vitePluginDeployFtpOption =
@@ -76,6 +80,8 @@ export interface FtpConnectConfig {
   port: number
   user: string
   password: string
+  secure?: AccessOptions['secure']
+  secureOptions?: AccessOptions['secureOptions']
 }
 
 export interface DeployTargetResult {

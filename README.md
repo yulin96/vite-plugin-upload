@@ -151,13 +151,14 @@ deploy-oss --config deploy-oss.config.mjs
 
 | Option            | Default          | Description                                                               |
 | :---------------- | :--------------- | :------------------------------------------------------------------------ |
-| `open`            | `true`           | Enable FTP upload. Use environment variables to avoid accidental uploads. |
+| `open`            | `false`          | Enable FTP upload. Use environment variables to avoid accidental uploads. |
 | `uploadPath`      | -                | FTP destination path. Supports `string` or `string[]`.                    |
 | `host`            | -                | FTP host address.                                                         |
 | `port`            | `21`             | FTP port.                                                                 |
 | `user`            | -                | FTP username.                                                             |
 | `password`        | -                | FTP password.                                                             |
 | `alias`           | -                | Public URL used in terminal output.                                       |
+| `secure`          | `false`          | Enable FTPS. Use `true` or `'implicit'` when the server requires it.       |
 | `autoUpload`      | `false`          | Skip upload confirmation.                                                 |
 | `singleBack`      | `false`          | Back up selected files before upload.                                     |
 | `singleBackFiles` | `['index.html']` | Files to back up when `singleBack` is enabled.                            |
@@ -172,7 +173,7 @@ deploy-oss --config deploy-oss.config.mjs
 
 | Option            | Default           | Description                                                               |
 | :---------------- | :---------------- | :------------------------------------------------------------------------ |
-| `open`            | `true`            | Enable OSS upload. Use environment variables to avoid accidental uploads. |
+| `open`            | `false`           | Enable OSS upload. Use environment variables to avoid accidental uploads. |
 | `accessKeyId`     | -                 | OSS access key ID.                                                        |
 | `accessKeySecret` | -                 | OSS access key secret.                                                    |
 | `bucket`          | -                 | OSS bucket name.                                                          |

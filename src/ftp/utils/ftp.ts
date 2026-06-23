@@ -24,8 +24,7 @@ export async function connectWithRetry(
       client.ftp.verbose = false
       await client.access({
         ...config,
-        secure: true,
-        secureOptions: { rejectUnauthorized: false, timeout: 60000 },
+        secure: config.secure ?? false,
       })
       return
     } catch (error) {

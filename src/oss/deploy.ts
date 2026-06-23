@@ -476,7 +476,11 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     let manifestSummary: string | null = null
     let manifestUrl: string | undefined
 
-    if (manifestFileName) {
+    if (failedCount > 0 && failOnError) {
+      throw new Error(`Failed to upload ${failedCount} of ${results.length} files`)
+    }
+
+    if (manifestFileName && failedCount === 0) {
       const manifestRelativeFilePath = manifestFileName
       const manifestFilePath = normalizeSlash(resolve(resolvedOutDir, manifestRelativeFilePath))
       const manifestObjectKey = normalizeObjectKey(normalizedUploadDir, manifestRelativeFilePath)
@@ -524,6 +528,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         normalizedAlias,
       )
       manifestSummary = truncateTerminalText(manifestUrl || manifestObjectKey, 20)
+    } else if (manifestFileName && failedCount > 0) {
+      console.warn(`${getLogSymbol('warning')} 有文件上传失败，已跳过清单文件`)
     }
 
     try {
@@ -591,10 +597,6 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         durationMs: Date.now() - startTime,
       })
       console.log(renderDebugPanel(debugEntries))
-    }
-
-    if (failedCount > 0 && failOnError) {
-      throw new Error(`Failed to upload ${failedCount} of ${results.length} files`)
     }
 
     return {

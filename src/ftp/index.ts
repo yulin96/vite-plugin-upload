@@ -23,7 +23,7 @@ export type {
 } from './types'
 
 export default function vitePluginDeployFtp(option: vitePluginDeployFtpOption): Plugin {
-  const { open = true } = option || {}
+  const { open = false } = option || {}
 
   let buildFailed = false
   let upload = false

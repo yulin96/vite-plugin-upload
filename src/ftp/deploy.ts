@@ -669,7 +669,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     ftpConfig: FtpConfig,
     normalizedUploadPath: string,
   ): Promise<DeployTargetResult> => {
-    const { host, port = 21, user, password, alias = '', name } = ftpConfig
+    const { host, port = 21, user, password, alias = '', name, secure, secureOptions } = ftpConfig
     const normalizedAlias = alias ? normalizeUrlLikeBase(alias) : ''
 
     if (!host || !user || !password) {
@@ -725,7 +725,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       ),
     )
 
-    const connectConfig: FtpConnectConfig = { host, port, user, password }
+    const connectConfig: FtpConnectConfig = { host, port, user, password, secure, secureOptions }
     const preflightClient = new Client()
     const preflightSpinner = useInteractiveOutput ? ora(`连接到 ${displayName}...`).start() : null
 

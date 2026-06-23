@@ -19,7 +19,7 @@ export type {
 } from './types'
 
 export default function vitePluginDeployOss(option: vitePluginDeployOssOption): Plugin {
-  const { open = true, configBase } = option || {}
+  const { open = false, configBase } = option || {}
 
   let buildFailed = false
   let upload = false
