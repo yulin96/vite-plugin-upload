@@ -149,45 +149,45 @@ deploy-oss --config deploy-oss.config.mjs
 
 ## FTP Configuration
 
-| Option | Default | Description |
-| :-- | :-- | :-- |
-| `open` | `true` | Enable FTP upload. Use environment variables to avoid accidental uploads. |
-| `uploadPath` | - | FTP destination path. Supports `string` or `string[]`. |
-| `host` | - | FTP host address. |
-| `port` | `21` | FTP port. |
-| `user` | - | FTP username. |
-| `password` | - | FTP password. |
-| `alias` | - | Public URL used in terminal output. |
-| `autoUpload` | `false` | Skip upload confirmation. |
-| `singleBack` | `false` | Back up selected files before upload. |
-| `singleBackFiles` | `['index.html']` | Files to back up when `singleBack` is enabled. |
-| `ftps` | - | Multiple FTP server configs. |
-| `defaultFtp` | - | Default FTP config name. |
-| `concurrency` | `1` | Number of simultaneous uploads. |
-| `failOnError` | `true` | Fail the build when upload fails. |
-| `debug` | `false` | Print debug timing. |
-| `fancy` | `true` | Show styled terminal output. |
+| Option            | Default          | Description                                                               |
+| :---------------- | :--------------- | :------------------------------------------------------------------------ |
+| `open`            | `true`           | Enable FTP upload. Use environment variables to avoid accidental uploads. |
+| `uploadPath`      | -                | FTP destination path. Supports `string` or `string[]`.                    |
+| `host`            | -                | FTP host address.                                                         |
+| `port`            | `21`             | FTP port.                                                                 |
+| `user`            | -                | FTP username.                                                             |
+| `password`        | -                | FTP password.                                                             |
+| `alias`           | -                | Public URL used in terminal output.                                       |
+| `autoUpload`      | `false`          | Skip upload confirmation.                                                 |
+| `singleBack`      | `false`          | Back up selected files before upload.                                     |
+| `singleBackFiles` | `['index.html']` | Files to back up when `singleBack` is enabled.                            |
+| `ftps`            | -                | Multiple FTP server configs.                                              |
+| `defaultFtp`      | -                | Default FTP config name.                                                  |
+| `concurrency`     | `1`              | Number of simultaneous uploads.                                           |
+| `failOnError`     | `true`           | Fail the build when upload fails.                                         |
+| `debug`           | `false`          | Print debug timing.                                                       |
+| `fancy`           | `true`           | Show styled terminal output.                                              |
 
 ## OSS Configuration
 
-| Option | Default | Description |
-| :-- | :-- | :-- |
-| `open` | `true` | Enable OSS upload. Use environment variables to avoid accidental uploads. |
-| `accessKeyId` | - | OSS access key ID. |
-| `accessKeySecret` | - | OSS access key secret. |
-| `bucket` | - | OSS bucket name. |
-| `region` | - | OSS region, e.g. `oss-cn-beijing`. |
-| `outDir` | `'dist'` | Local directory for CLI or direct API upload. |
-| `uploadDir` | - | Target directory in OSS. |
-| `configBase` | - | Updates Vite asset base and manifest URLs. |
-| `alias` | - | URL alias used by manifest. |
-| `skip` | `'**/index.html'` | Files to skip. |
-| `overwrite` | `true` | Whether to overwrite existing OSS files. |
-| `autoDelete` | `false` | Delete local files after successful upload. |
-| `manifest` | `false` | Generate and upload `oss-manifest.json`. |
-| `failOnError` | `true` | Fail the build when upload fails. |
-| `debug` | `false` | Print debug timing. |
-| `fancy` | `true` | Show styled terminal output. |
+| Option            | Default           | Description                                                               |
+| :---------------- | :---------------- | :------------------------------------------------------------------------ |
+| `open`            | `true`            | Enable OSS upload. Use environment variables to avoid accidental uploads. |
+| `accessKeyId`     | -                 | OSS access key ID.                                                        |
+| `accessKeySecret` | -                 | OSS access key secret.                                                    |
+| `bucket`          | -                 | OSS bucket name.                                                          |
+| `region`          | -                 | OSS region, e.g. `oss-cn-beijing`.                                        |
+| `outDir`          | `'dist'`          | Local directory for CLI or direct API upload.                             |
+| `uploadDir`       | -                 | Target directory in OSS.                                                  |
+| `configBase`      | -                 | Updates Vite asset base and manifest URLs.                                |
+| `alias`           | -                 | URL alias used by manifest.                                               |
+| `skip`            | `'**/index.html'` | Files to skip.                                                            |
+| `overwrite`       | `true`            | Whether to overwrite existing OSS files.                                  |
+| `autoDelete`      | `false`           | Delete local files after successful upload.                               |
+| `manifest`        | `false`           | Generate and upload `oss-manifest.json`.                                  |
+| `failOnError`     | `true`            | Fail the build when upload fails.                                         |
+| `debug`           | `false`           | Print debug timing.                                                       |
+| `fancy`           | `true`            | Show styled terminal output.                                              |
 
 ## Important Behaviors
 
