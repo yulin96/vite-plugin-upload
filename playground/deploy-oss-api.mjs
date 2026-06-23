@@ -1,4 +1,4 @@
-import { deployOss } from '../dist/oss/deploy.mjs'
+import { deployOss } from '../dist/oss/deploy.js'
 
 await deployOss({
   accessKeyId: process.env.zAccessKeyId || '',

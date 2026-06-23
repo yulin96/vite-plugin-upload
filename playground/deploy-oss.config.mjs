@@ -1,4 +1,4 @@
-import { defineDeployOssConfig } from '../dist/index.mjs'
+import { defineDeployOssConfig } from '../dist/index.js'
 
 export default defineDeployOssConfig({
   accessKeyId: process.env.zAccessKeyId || '',

@@ -12,5 +12,11 @@ export default defineConfig({
   ],
   dts: true,
   exports: false,
+  outExtensions() {
+    return {
+      js: '.js',
+      dts: '.d.ts',
+    }
+  },
   clean: true,
 })

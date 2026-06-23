@@ -1,4 +1,4 @@
-import { defineDeployFtpConfig } from '../dist/index.mjs'
+import { defineDeployFtpConfig } from '../dist/index.js'
 
 export default defineDeployFtpConfig({
   host: process.env.zH5FtpHost || '',

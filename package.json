@@ -3,8 +3,8 @@
   "type": "module",
   "version": "0.0.0",
   "description": "A Vite plugin for uploading build artifacts.",
-  "main": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "author": "yulinzhao",
   "license": "MIT",
   "homepage": "https://github.com/yulin96/vite-plugin-upload#readme",
@@ -17,30 +17,30 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./ftp": {
-      "types": "./dist/ftp/index.d.mts",
-      "default": "./dist/ftp/index.mjs"
+      "types": "./dist/ftp/index.d.ts",
+      "default": "./dist/ftp/index.js"
     },
     "./ftp/deploy": {
-      "types": "./dist/ftp/deploy.d.mts",
-      "default": "./dist/ftp/deploy.mjs"
+      "types": "./dist/ftp/deploy.d.ts",
+      "default": "./dist/ftp/deploy.js"
     },
     "./oss": {
-      "types": "./dist/oss/index.d.mts",
-      "default": "./dist/oss/index.mjs"
+      "types": "./dist/oss/index.d.ts",
+      "default": "./dist/oss/index.js"
     },
     "./oss/deploy": {
-      "types": "./dist/oss/deploy.d.mts",
-      "default": "./dist/oss/deploy.mjs"
+      "types": "./dist/oss/deploy.d.ts",
+      "default": "./dist/oss/deploy.js"
     },
     "./package.json": "./package.json"
   },
   "bin": {
-    "deploy-ftp": "./dist/ftp/cli.mjs",
-    "deploy-oss": "./dist/oss/cli.mjs"
+    "deploy-ftp": "./dist/ftp/cli.js",
+    "deploy-oss": "./dist/oss/cli.js"
   },
   "files": [
     "dist"
@@ -59,9 +59,9 @@
     "build:test:oss": "cd playground && vite build --mode oss",
     "build:test:oss-debug": "cd playground && vite build --mode oss-debug",
     "deploy:test:ftp:api": "pnpm build && pnpm build:test && node playground/deploy-ftp-api.mjs",
-    "deploy:test:ftp:cli": "pnpm build && pnpm build:test && node dist/ftp/cli.mjs --config playground/deploy-ftp.config.mjs",
+    "deploy:test:ftp:cli": "pnpm build && pnpm build:test && node dist/ftp/cli.js --config playground/deploy-ftp.config.mjs",
     "deploy:test:oss:api": "pnpm build && pnpm build:test && node playground/deploy-oss-api.mjs",
-    "deploy:test:oss:cli": "pnpm build && pnpm build:test && node dist/oss/cli.mjs --config playground/deploy-oss.config.mjs",
+    "deploy:test:oss:cli": "pnpm build && pnpm build:test && node dist/oss/cli.js --config playground/deploy-oss.config.mjs",
     "release": "bumpp",
     "prepublishOnly": "pnpm build"
   },

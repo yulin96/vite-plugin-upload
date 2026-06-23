@@ -1,4 +1,4 @@
-import { deployFtp } from '../dist/ftp/deploy.mjs'
+import { deployFtp } from '../dist/ftp/deploy.js'
 
 await deployFtp({
   host: process.env.zH5FtpHost || '',
