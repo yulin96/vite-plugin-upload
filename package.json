@@ -3,6 +3,8 @@
   "type": "module",
   "version": "0.0.0",
   "description": "A Vite plugin for uploading build artifacts.",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
   "author": "yulinzhao",
   "license": "MIT",
   "homepage": "https://github.com/yulin96/vite-plugin-upload#readme",
@@ -43,6 +45,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
@@ -58,7 +63,7 @@
     "deploy:test:oss:api": "npm run build && npm run build:test && node playground/deploy-oss-api.mjs",
     "deploy:test:oss:cli": "npm run build && npm run build:test && node dist/oss/cli.mjs --config playground/deploy-oss.config.mjs",
     "release": "bumpp",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "vite-plugin",
