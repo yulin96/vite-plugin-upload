@@ -9,6 +9,22 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      vitePluginDeployOss({
+        open: shouldDeployOss,
+        debug: isOssDebug,
+        accessKeyId: process.env.zAccessKeyId || '',
+        accessKeySecret: process.env.zAccessKeySecret || '',
+        bucket: process.env.zBucket || '',
+        region: 'oss-cn-beijing',
+        alias: process.env.zBucketAlias || '',
+        uploadDir: '/test/vite-plugin-upload/oss/',
+        // skip: ['**/*.html', '**/pluginWebUpdateNotice/**'],
+        overwrite: true,
+        autoDelete: false,
+        manifest: true,
+        configBase: `${process.env.zBucketAlias || ''}/test/vite-plugin-upload/oss/`,
+      }),
+
       vitePluginDeployFtp({
         open: shouldDeployFtp,
         debug: isFtpDebug,
@@ -34,22 +50,6 @@ export default defineConfig(({ mode }) => {
             alias: process.env.zH5FtpAlias2,
           },
         ],
-      }),
-
-      vitePluginDeployOss({
-        open: shouldDeployOss,
-        debug: isOssDebug,
-        accessKeyId: process.env.zAccessKeyId || '',
-        accessKeySecret: process.env.zAccessKeySecret || '',
-        bucket: process.env.zBucket || '',
-        region: 'oss-cn-beijing',
-        alias: process.env.zBucketAlias || '',
-        uploadDir: '/test/vite-plugin-upload/oss/',
-        skip: ['**/*.html', '**/pluginWebUpdateNotice/**'],
-        overwrite: true,
-        autoDelete: false,
-        manifest: true,
-        configBase: `${process.env.zBucketAlias || ''}/test/vite-plugin-upload/oss/`,
       }),
     ],
 
