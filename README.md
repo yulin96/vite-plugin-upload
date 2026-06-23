@@ -5,7 +5,7 @@ Upload Vite build artifacts to FTP or Aliyun OSS.
 ## Installation
 
 ```bash
-npm add vite-plugin-upload -D
+pnpm add vite-plugin-upload -D
 ```
 
 ## Quick Start
@@ -204,29 +204,29 @@ deploy-oss --config deploy-oss.config.mjs
 Install dependencies first:
 
 ```bash
-npm install
+pnpm install
 ```
 
 Basic checks:
 
 ```bash
-npm run typecheck
-npm run test -- --run
+pnpm typecheck
+pnpm test -- --run
 ```
 
 Playground build checks without upload:
 
 ```bash
-npm run build:test
+pnpm build:test
 ```
 
 FTP upload tests:
 
 ```bash
-npm run build:test:ftp
-npm run build:test:ftp-debug
-npm run deploy:test:ftp:api
-npm run deploy:test:ftp:cli
+pnpm build:test:ftp
+pnpm build:test:ftp-debug
+pnpm deploy:test:ftp:api
+pnpm deploy:test:ftp:cli
 ```
 
 FTP test environment variables:
@@ -242,10 +242,10 @@ zH5FtpAlias=https://example.com
 OSS upload tests:
 
 ```bash
-npm run build:test:oss
-npm run build:test:oss-debug
-npm run deploy:test:oss:api
-npm run deploy:test:oss:cli
+pnpm build:test:oss
+pnpm build:test:oss-debug
+pnpm deploy:test:oss:api
+pnpm deploy:test:oss:cli
 ```
 
 OSS test environment variables:

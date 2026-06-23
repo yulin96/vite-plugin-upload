@@ -58,12 +58,12 @@
     "build:test:ftp-debug": "cd playground && vite build --mode ftp-debug",
     "build:test:oss": "cd playground && vite build --mode oss",
     "build:test:oss-debug": "cd playground && vite build --mode oss-debug",
-    "deploy:test:ftp:api": "npm run build && npm run build:test && node playground/deploy-ftp-api.mjs",
-    "deploy:test:ftp:cli": "npm run build && npm run build:test && node dist/ftp/cli.mjs --config playground/deploy-ftp.config.mjs",
-    "deploy:test:oss:api": "npm run build && npm run build:test && node playground/deploy-oss-api.mjs",
-    "deploy:test:oss:cli": "npm run build && npm run build:test && node dist/oss/cli.mjs --config playground/deploy-oss.config.mjs",
+    "deploy:test:ftp:api": "pnpm build && pnpm build:test && node playground/deploy-ftp-api.mjs",
+    "deploy:test:ftp:cli": "pnpm build && pnpm build:test && node dist/ftp/cli.mjs --config playground/deploy-ftp.config.mjs",
+    "deploy:test:oss:api": "pnpm build && pnpm build:test && node playground/deploy-oss-api.mjs",
+    "deploy:test:oss:cli": "pnpm build && pnpm build:test && node dist/oss/cli.mjs --config playground/deploy-oss.config.mjs",
     "release": "bumpp",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm build"
   },
   "keywords": [
     "vite-plugin",
