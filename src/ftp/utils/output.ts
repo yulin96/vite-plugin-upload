@@ -11,9 +11,17 @@ export interface TerminalRow {
 
 type PanelTone = 'info' | 'success' | 'warning' | 'danger'
 
+const panelTitleColor: Record<PanelTone, (text: string) => string> = {
+  info: chalk.cyan,
+  success: chalk.green,
+  warning: chalk.yellow,
+  danger: chalk.red,
+}
+
 const getTerminalWidth = () => process.stdout?.columns || 100
 const getPanelInnerWidth = () => Math.max(46, Math.min(84, getTerminalWidth() - 4))
 const padVisual = (text: string, width: number) => `${text}${' '.repeat(Math.max(0, width - stringWidth(text)))}`
+const normalizeLabel = (label: string) => label.replace(/[:：]\s*$/, '')
 
 const fitVisual = (text: string, width: number) => {
   if (width <= 0) return ''
@@ -26,15 +34,15 @@ export const truncateTerminalText = (text: string, reservedWidth = 26): string =
 }
 
 export const renderPanel = (title: string, rows: TerminalRow[], tone: PanelTone = 'info', footer?: string): string => {
+  const titleColor = panelTitleColor[tone]
   const innerWidth = getPanelInnerWidth()
-  const labelWidth = rows.length > 0 ? Math.max(...rows.map((row) => stringWidth(row.label))) : 0
-  const contentLines: string[] = [chalk.bold(cliTruncate(title, innerWidth, { position: 'end' }))]
+  const labelWidth = rows.length > 0 ? Math.max(...rows.map((row) => stringWidth(normalizeLabel(row.label)))) : 0
+  const contentLines: string[] = [titleColor(chalk.bold(cliTruncate(title, innerWidth, { position: 'end' })))]
 
   if (rows.length > 0) {
-    contentLines.push('')
     for (const row of rows) {
-      const paddedLabel = padVisual(row.label, labelWidth)
-      const prefix = `${paddedLabel}  `
+      const paddedLabel = padVisual(normalizeLabel(row.label), labelWidth)
+      const prefix = `  ${paddedLabel}  `
       const availableValueWidth = Math.max(8, innerWidth - stringWidth(prefix))
       const value = row.preserveValue ? row.value : fitVisual(row.value, availableValueWidth)
       contentLines.push(`${chalk.gray(prefix)}${value}`)
@@ -46,7 +54,6 @@ export const renderPanel = (title: string, rows: TerminalRow[], tone: PanelTone 
     contentLines.push(chalk.gray(cliTruncate(footer, innerWidth, { position: 'middle' })))
   }
 
-  void tone
   return contentLines.join('\n')
 }
 

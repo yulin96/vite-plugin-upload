@@ -426,6 +426,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
   if (files.length === 0) {
     console.log(`${getLogSymbol('warning')} 没有找到需要上传的文件`)
+    console.log()
     return {
       success: true,
       results: [],
@@ -605,6 +606,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       console.log(renderDebugPanel(debugEntries))
     }
 
+    console.log()
     return {
       success: failedCount === 0,
       results,
@@ -624,12 +626,14 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       console.log(renderDebugPanel(debugEntries))
     }
     if (failOnError) {
+      console.log()
       throw error instanceof Error ? error : new Error(String(error))
     }
 
     const uploadedBytes = completedResults.reduce((sum, result) => (result.success ? sum + result.size : sum), 0)
     const retryCount = completedResults.reduce((sum, result) => sum + result.retries, 0)
 
+    console.log()
     return {
       success: false,
       results: completedResults,

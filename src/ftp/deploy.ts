@@ -1004,9 +1004,11 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
   const failedCount = deployResults.reduce((sum, target) => sum + target.failedCount, 0)
 
   if (failedTargets.length > 0 && failOnError) {
+    console.log()
     throw new Error(`Failed to deploy ${failedTargets.length} of ${deployResults.length} FTP targets`)
   }
 
+  console.log()
   return {
     success: failedTargets.length === 0,
     targets: deployResults,
