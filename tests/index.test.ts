@@ -20,6 +20,7 @@ vi.mock('ali-oss', () => ({
 }))
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.clearAllMocks()
 })
 
@@ -73,6 +74,7 @@ test('skips OSS manifest when any upload fails', async () => {
   const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
   writeFileSync(join(outDir, 'a.js'), 'a')
   writeFileSync(join(outDir, 'b.js'), 'b')
+  const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
 
   ossMock.put.mockImplementation(async (name: string) => ({
     res: { status: name.endsWith('b.js') ? 500 : 200 },
@@ -94,11 +96,46 @@ test('skips OSS manifest when any upload fails', async () => {
     })
 
     expect(result.success).toBe(false)
+    expect(consoleLog.mock.calls.some((call) => call.join(' ').includes('文件上传结束，成功 1/2，失败 1'))).toBe(true)
     expect(ossMock.put).not.toHaveBeenCalledWith(
       'assets/oss-manifest.json',
       expect.any(String),
       expect.any(Object),
     )
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test('keeps OSS outDir root when autoDelete removes uploaded files', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  const nestedDir = join(outDir, 'nested')
+  const rootFile = join(outDir, 'a.js')
+  const nestedFile = join(nestedDir, 'b.js')
+  mkdirSync(nestedDir)
+  writeFileSync(rootFile, 'a')
+  writeFileSync(nestedFile, 'b')
+
+  ossMock.put.mockResolvedValue({ res: { status: 200 } })
+
+  try {
+    await deployOss({
+      open: true,
+      accessKeyId: 'id',
+      accessKeySecret: 'secret',
+      bucket: 'bucket',
+      region: 'oss-cn-hangzhou',
+      uploadDir: 'assets',
+      outDir,
+      autoDelete: true,
+      retryTimes: 1,
+      fancy: false,
+    })
+
+    expect(existsSync(rootFile)).toBe(false)
+    expect(existsSync(nestedFile)).toBe(false)
+    expect(existsSync(nestedDir)).toBe(false)
+    expect(existsSync(outDir)).toBe(true)
   } finally {
     rmSync(outDir, { recursive: true, force: true })
   }

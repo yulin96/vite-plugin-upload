@@ -164,7 +164,7 @@ deploy-oss --config deploy-oss.config.mjs
 | `singleBackFiles` | `['index.html']` | Files to back up when `singleBack` is enabled.                            |
 | `ftps`            | -                | Multiple FTP server configs.                                              |
 | `defaultFtp`      | -                | Default FTP config name.                                                  |
-| `concurrency`     | `4`              | Number of simultaneous uploads.                                           |
+| `concurrency`     | `8`              | Number of simultaneous uploads.                                           |
 | `failOnError`     | `true`           | Fail the build when upload fails.                                         |
 | `debug`           | `false`          | Print debug timing.                                                       |
 | `fancy`           | `true`           | Show styled terminal output.                                              |

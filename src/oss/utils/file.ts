@@ -18,7 +18,7 @@ export const getFileMd5 = (filePath: string): Promise<string> => {
 export const removeEmptyDirectories = async (rootDir: string): Promise<string[]> => {
   const deletedDirectories: string[] = []
 
-  const visit = async (dirPath: string): Promise<boolean> => {
+  const visit = async (dirPath: string, isRoot = false): Promise<boolean> => {
     const entries = await readdir(dirPath, { withFileTypes: true })
     let hasNonEmptyContent = false
 
@@ -36,13 +36,13 @@ export const removeEmptyDirectories = async (rootDir: string): Promise<string[]>
       }
     }
 
-    if (hasNonEmptyContent) return false
+    if (hasNonEmptyContent || isRoot) return false
 
     await rm(dirPath, { recursive: true, force: true })
     deletedDirectories.push(dirPath)
     return true
   }
 
-  await visit(resolve(rootDir))
+  await visit(resolve(rootDir), true)
   return deletedDirectories
 }

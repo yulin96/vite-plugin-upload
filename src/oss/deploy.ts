@@ -404,6 +404,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
       })
       progressBar.stop()
+    } else if (failed > 0) {
+      console.log(`${getLogSymbol('warning')} 文件上传结束，成功 ${completed - failed}/${totalFiles}，失败 ${failed}`)
     } else {
       console.log(`${getLogSymbol('success')} 所有文件上传完成 (${totalFiles}/${totalFiles})`)
     }
