@@ -1,7 +1,7 @@
 {
   "name": "vite-plugin-upload",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A Vite plugin for uploading build artifacts.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
