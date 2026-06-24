@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
         debug: isFtpDebug,
         uploadPath: '/__test/vite-plugin-upload/ftp/',
         singleBack: true,
-        autoUpload: true,
+        // autoUpload: true,
         defaultFtp: process.env.zH5FtpName,
         ftps: [
           {

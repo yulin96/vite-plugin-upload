@@ -10,13 +10,6 @@ export interface TerminalRow {
 
 type PanelTone = 'info' | 'success' | 'warning' | 'danger'
 
-const panelBorderColor: Record<PanelTone, string> = {
-  info: 'cyan',
-  success: 'green',
-  warning: 'yellow',
-  danger: 'red',
-}
-
 const getTerminalWidth = () => process.stdout?.columns || 100
 const getPanelInnerWidth = () => Math.max(46, Math.min(84, getTerminalWidth() - 4))
 const padVisual = (text: string, width: number) => `${text}${' '.repeat(Math.max(0, width - stringWidth(text)))}`
@@ -31,7 +24,6 @@ export const truncateTerminalText = (text: string, reservedWidth = 26): string =
 }
 
 export const renderPanel = (title: string, rows: TerminalRow[], tone: PanelTone = 'info', footer?: string): string => {
-  const color = chalk[panelBorderColor[tone] as keyof typeof chalk] as (text: string) => string
   const innerWidth = getPanelInnerWidth()
   const labelWidth = rows.length > 0 ? Math.max(...rows.map((row) => stringWidth(row.label))) : 0
   const contentLines: string[] = [chalk.bold(cliTruncate(title, innerWidth, { position: 'end' }))]
@@ -51,10 +43,8 @@ export const renderPanel = (title: string, rows: TerminalRow[], tone: PanelTone 
     contentLines.push(chalk.gray(cliTruncate(footer, innerWidth, { position: 'middle' })))
   }
 
-  const top = color(`╭${'─'.repeat(innerWidth + 2)}╮`)
-  const bottom = color(`╰${'─'.repeat(innerWidth + 2)}╯`)
-  const body = contentLines.map((line) => `${color('│')} ${fitVisual(line, innerWidth)} ${color('│')}`).join('\n')
-  return `${top}\n${body}\n${bottom}`
+  void tone
+  return contentLines.join('\n')
 }
 
 export const renderInlineStats = (items: Array<string | false | null | undefined>): string =>
