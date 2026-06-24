@@ -328,28 +328,6 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     })
 
     const normalizedTargetDir = normalizeFtpUploadPath(targetDir)
-    const groupStartedAt = Date.now()
-    const groupsByRelativeDir = new Map<string, UploadTask[]>()
-    for (const task of tasks) {
-      const remoteDir = normalizeSlash(path.posix.dirname(task.remotePath))
-      const normalizedRemoteDir = remoteDir && remoteDir !== '.' ? remoteDir : normalizedTargetDir
-      const relativeDir =
-        normalizedRemoteDir === normalizedTargetDir ? '' : (
-          normalizedRemoteDir.slice(normalizedTargetDir.length).replace(/^\/+/, '')
-        )
-      const currentTasks = groupsByRelativeDir.get(relativeDir)
-      if (currentTasks) {
-        currentTasks.push(task)
-      } else {
-        groupsByRelativeDir.set(relativeDir, [task])
-      }
-    }
-
-    debugEntries.push({
-      label: '目录分组',
-      durationMs: Date.now() - groupStartedAt,
-      detail: `${groupsByRelativeDir.size} 组`,
-    })
     tasks.sort((left, right) => left.remotePath.localeCompare(right.remotePath))
 
     const totalBytes = tasks.reduce((sum, task) => sum + task.size, 0)
