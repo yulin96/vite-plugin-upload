@@ -16,7 +16,6 @@ import type {
   FtpConnectConfig,
   UploadResult,
   UploadTask,
-  UploadTaskGroup,
 } from './types'
 import { createTempDir, createZipFile, getAllFiles } from './utils/file'
 import { connectWithRetry, sleep, validateFtpConfig } from './utils/ftp'
@@ -93,9 +92,9 @@ const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
   const rows = entries.map((entry) => ({
     label: `${entry.label}:`,
     value: chalk.cyan(
-      entry.detail
-        ? `${formatTimingDuration(entry.durationMs)} · ${truncateTerminalText(entry.detail, 24)}`
-        : formatTimingDuration(entry.durationMs),
+      entry.detail ?
+        `${formatTimingDuration(entry.durationMs)} · ${truncateTerminalText(entry.detail, 24)}`
+      : formatTimingDuration(entry.durationMs),
     ),
   }))
 
@@ -117,12 +116,13 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     autoUpload = false,
     fancy = true,
     failOnError = true,
-    concurrency = 1,
+    concurrency = 8,
   } = safeOption
 
   const isMultiFtp = 'ftps' in safeOption
-  const ftpConfigs: FtpConfig[] = isMultiFtp
-    ? safeOption.ftps || []
+  const ftpConfigs: FtpConfig[] =
+    isMultiFtp ?
+      safeOption.ftps || []
     : [{ ...safeOption, name: safeOption.name || safeOption.alias || safeOption.host }]
   const defaultFtp = isMultiFtp ? safeOption.defaultFtp : undefined
   const uploadPaths = Array.isArray(uploadPath) ? uploadPath : [uploadPath]
@@ -282,7 +282,6 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     const debugEntries: DebugTimingEntry[] = []
     const totalFiles = files.length
     const tasks: UploadTask[] = []
-    const taskGroups: UploadTaskGroup[] = []
 
     let completed = 0
     let failed = 0
@@ -335,9 +334,9 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       const remoteDir = normalizeSlash(path.posix.dirname(task.remotePath))
       const normalizedRemoteDir = remoteDir && remoteDir !== '.' ? remoteDir : normalizedTargetDir
       const relativeDir =
-        normalizedRemoteDir === normalizedTargetDir
-          ? ''
-          : normalizedRemoteDir.slice(normalizedTargetDir.length).replace(/^\/+/, '')
+        normalizedRemoteDir === normalizedTargetDir ? '' : (
+          normalizedRemoteDir.slice(normalizedTargetDir.length).replace(/^\/+/, '')
+        )
       const currentTasks = groupsByRelativeDir.get(relativeDir)
       if (currentTasks) {
         currentTasks.push(task)
@@ -346,25 +345,21 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       }
     }
 
-    for (const [relativeDir, groupedTasks] of groupsByRelativeDir) {
-      const remoteDir = relativeDir ? normalizeRemotePath(normalizedTargetDir, relativeDir) : normalizedTargetDir
-      taskGroups.push({ relativeDir, remoteDir, tasks: groupedTasks })
-    }
-
-    taskGroups.sort((left, right) => left.remoteDir.localeCompare(right.remoteDir))
     debugEntries.push({
       label: '目录分组',
       durationMs: Date.now() - groupStartedAt,
-      detail: `${taskGroups.length} 组`,
+      detail: `${groupsByRelativeDir.size} 组`,
     })
+    tasks.sort((left, right) => left.remotePath.localeCompare(right.remotePath))
 
     const totalBytes = tasks.reduce((sum, task) => sum + task.size, 0)
     const startAt = Date.now()
-    const safeWindowSize = Math.max(1, Math.min(windowSize, taskGroups.length || 1))
+    const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
     const extraWorkerCount = reusableClient ? Math.max(0, safeWindowSize - 1) : safeWindowSize
     const silentLogs = Boolean(useInteractiveOutput)
-    const progressBar = useInteractiveOutput
-      ? new cliProgress.SingleBar({
+    const progressBar =
+      useInteractiveOutput ?
+        new cliProgress.SingleBar({
           hideCursor: true,
           clearOnComplete: true,
           stopOnComplete: true,
@@ -420,7 +415,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     }
 
     const refreshTimer = progressBar ? setInterval(updateProgress, 120) : null
-    let currentGroupIndex = 0
+    let currentTaskIndex = 0
 
     const worker = async () => {
       const client = new Client()
@@ -485,34 +480,32 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
       try {
         while (true) {
-          const groupIndex = currentGroupIndex++
-          if (groupIndex >= taskGroups.length) return
+          const taskIndex = currentTaskIndex++
+          if (taskIndex >= tasks.length) return
 
-          const taskGroup = taskGroups[groupIndex]
-          for (const task of taskGroup.tasks) {
-            updateProgress()
+          const task = tasks[taskIndex]
+          updateProgress()
 
-            const result = await uploadFileWithRetry(task, {
-              client,
-              ensureConnected,
-              ensureRemoteDir,
-              markDisconnected,
-              silentLogs,
-              maxRetries,
-              retryDelay,
-              debugMetrics,
-            })
+          const result = await uploadFileWithRetry(task, {
+            client,
+            ensureConnected,
+            ensureRemoteDir,
+            markDisconnected,
+            silentLogs,
+            maxRetries,
+            retryDelay,
+            debugMetrics,
+          })
 
-            completed++
-            retries += result.retries
-            if (result.success) {
-              uploadedBytes += result.size
-            } else {
-              failed++
-            }
-            results.push(result)
-            updateProgress()
+          completed++
+          retries += result.retries
+          if (result.success) {
+            uploadedBytes += result.size
+          } else {
+            failed++
           }
+          results.push(result)
+          updateProgress()
         }
       } finally {
         client.close()
@@ -581,34 +574,32 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       }
 
       while (true) {
-        const groupIndex = currentGroupIndex++
-        if (groupIndex >= taskGroups.length) return
+        const taskIndex = currentTaskIndex++
+        if (taskIndex >= tasks.length) return
 
-        const taskGroup = taskGroups[groupIndex]
-        for (const task of taskGroup.tasks) {
-          updateProgress()
+        const task = tasks[taskIndex]
+        updateProgress()
 
-          const result = await uploadFileWithRetry(task, {
-            client,
-            ensureConnected,
-            ensureRemoteDir,
-            markDisconnected,
-            silentLogs,
-            maxRetries,
-            retryDelay,
-            debugMetrics,
-          })
+        const result = await uploadFileWithRetry(task, {
+          client,
+          ensureConnected,
+          ensureRemoteDir,
+          markDisconnected,
+          silentLogs,
+          maxRetries,
+          retryDelay,
+          debugMetrics,
+        })
 
-          completed++
-          retries += result.retries
-          if (result.success) {
-            uploadedBytes += result.size
-          } else {
-            failed++
-          }
-          results.push(result)
-          updateProgress()
+        completed++
+        retries += result.retries
+        if (result.success) {
+          uploadedBytes += result.size
+        } else {
+          failed++
         }
+        results.push(result)
+        updateProgress()
       }
     }
 
@@ -652,9 +643,9 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         durationMs: debugMetrics.switchDirMs,
       },
       {
-        label: '文件传输',
+        label: '传输累计',
         durationMs: debugMetrics.uploadMs,
-        detail: `${tasks.length} 个文件`,
+        detail: `${tasks.length} 个文件 · ${safeWindowSize} 路并发`,
       },
       {
         label: '上传阶段',
@@ -837,9 +828,9 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         {
           label: '结果:',
           value:
-            failedCount === 0
-              ? chalk.green(`${successCount}/${results.length} 全部成功`)
-              : chalk.yellow(`成功 ${successCount} 个，失败 ${failedCount} 个`),
+            failedCount === 0 ?
+              chalk.green(`${successCount}/${results.length} 全部成功`)
+            : chalk.yellow(`成功 ${successCount} 个，失败 ${failedCount} 个`),
         },
         {
           label: '统计:',
@@ -1151,9 +1142,8 @@ async function createSingleBackup(
   useSpinner: boolean = true,
 ): Promise<BackupSummary | null> {
   const timestamp = dayjs().format('YYYYMMDD_HHmmss')
-  const backupSpinner = useSpinner
-    ? ora(`备份指定文件中 ${chalk.yellow(`==> ${resolveDisplayUrl(alias, dir)}`)}`).start()
-    : null
+  const backupSpinner =
+    useSpinner ? ora(`备份指定文件中 ${chalk.yellow(`==> ${resolveDisplayUrl(alias, dir)}`)}`).start() : null
 
   const tempDir = createTempDir('single-backup')
   let backupProgressSpinner: ReturnType<typeof ora> | undefined
