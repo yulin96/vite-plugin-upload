@@ -168,6 +168,7 @@ deploy-oss --config deploy-oss.config.mjs
 | `failOnError`     | `true`           | Fail the build when upload fails.                                         |
 | `debug`           | `false`          | Print debug timing.                                                       |
 | `fancy`           | `true`           | Show styled terminal output.                                              |
+| `showUploadedFiles` | `false`        | Print successfully uploaded file list.                                     |
 
 ## OSS Configuration
 
@@ -189,6 +190,7 @@ deploy-oss --config deploy-oss.config.mjs
 | `failOnError`     | `true`            | Fail the build when upload fails.                                         |
 | `debug`           | `false`           | Print debug timing.                                                       |
 | `fancy`           | `true`            | Show styled terminal output.                                              |
+| `showUploadedFiles` | `false`         | Print successfully uploaded file list.                                    |
 
 ## Important Behaviors
 

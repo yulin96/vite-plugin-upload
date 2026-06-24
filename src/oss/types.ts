@@ -27,6 +27,7 @@ export interface vitePluginDeployOssOption extends Omit<
   open?: boolean
   debug?: boolean
   fancy?: boolean
+  showUploadedFiles?: boolean
 
   noCache?: boolean
   failOnError?: boolean

@@ -24,7 +24,6 @@ import {
   getPanelDot,
   renderInlineStats,
   renderPanel,
-  truncateTerminalText,
   type TerminalRow,
 } from './utils/output'
 import {
@@ -91,14 +90,23 @@ const renderBackupPanel = (summary: BackupSummary): string => {
 const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
   const rows = entries.map((entry) => ({
     label: `${entry.label}:`,
-    value: chalk.cyan(
-      entry.detail ?
-        `${formatTimingDuration(entry.durationMs)} · ${truncateTerminalText(entry.detail, 24)}`
-      : formatTimingDuration(entry.durationMs),
-    ),
+    value: chalk.cyan(entry.detail ? `${formatTimingDuration(entry.durationMs)} · ${entry.detail}` : formatTimingDuration(entry.durationMs)),
   }))
 
   return renderPanel(`${getPanelDot('success')} 调试耗时`, rows, 'info')
+}
+
+const printUploadedFiles = (results: UploadResult[]) => {
+  const uploadedFiles = results.filter((result) => result.success)
+  if (uploadedFiles.length === 0) return
+
+  console.log(`${getPanelDot('success')} ${chalk.green.bold('上传成功文件')}`)
+  uploadedFiles.forEach((result) => {
+    console.log(
+      `  ${chalk.green('•')} ${chalk.cyan(result.relativeFilePath)} ${chalk.gray(`· ${formatBytes(result.size)}`)} ${chalk.gray('->')} ${chalk.yellow(result.name)}`,
+    )
+  })
+  console.log()
 }
 
 export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResult> => {
@@ -110,6 +118,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     singleBack = false,
     singleBackFiles = ['index.html'],
     showBackFile = false,
+    showUploadedFiles = false,
     debug = false,
     maxRetries = 3,
     retryDelay = 1000,
@@ -689,16 +698,13 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           },
           {
             label: '目标:',
-            value: chalk.yellow(
-              truncateTerminalText(
-                normalizedAlias ? `${normalizedUploadPath} · ${normalizedAlias}` : normalizedUploadPath,
-                18,
-              ),
-            ),
+            value: chalk.yellow(normalizedAlias ? `${normalizedUploadPath} · ${normalizedAlias}` : normalizedUploadPath),
+            preserveValue: true,
           },
           {
             label: '文件:',
-            value: chalk.blue(`${totalFiles} 个 · ${truncateTerminalText(outDir, 30)}`),
+            value: chalk.blue(`${totalFiles} 个 · ${outDir}`),
+            preserveValue: true,
           },
         ],
         'info',
@@ -840,9 +846,8 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         resultRows.push(
           ...failedItems.map((item, index) => ({
             label: `失败 ${index + 1}:`,
-            value: chalk.red(
-              `${truncateTerminalText(item.name, 26)} · ${truncateTerminalText(item.error?.message || 'unknown error', 22)}`,
-            ),
+            value: chalk.red(`${item.name} · ${item.error?.message || 'unknown error'}`),
+            preserveValue: true,
           })),
         )
         if (failedCount > failedItems.length) {
@@ -860,6 +865,10 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           failedCount === 0 ? 'success' : 'warning',
         ),
       )
+
+      if (showUploadedFiles) {
+        printUploadedFiles(results)
+      }
 
       if (debug) {
         debugEntries.push({
@@ -988,7 +997,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     throw new Error(`Failed to deploy ${failedTargets.length} of ${deployResults.length} FTP targets`)
   }
 
-  console.log()
+  if (!showUploadedFiles) console.log()
   return {
     success: failedTargets.length === 0,
     targets: deployResults,

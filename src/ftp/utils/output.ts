@@ -28,11 +28,6 @@ const fitVisual = (text: string, width: number) => {
   return padVisual(cliTruncate(text, width, { position: 'middle' }), width)
 }
 
-export const truncateTerminalText = (text: string, reservedWidth = 26): string => {
-  const maxWidth = Math.max(24, Math.min(88, getTerminalWidth() - reservedWidth))
-  return cliTruncate(text, maxWidth, { position: 'middle' })
-}
-
 export const renderPanel = (title: string, rows: TerminalRow[], tone: PanelTone = 'info', footer?: string): string => {
   const titleColor = panelTitleColor[tone]
   const innerWidth = getPanelInnerWidth()

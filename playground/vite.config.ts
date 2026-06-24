@@ -1,7 +1,8 @@
+import type { UserConfig } from 'vite'
 import { defineConfig } from 'vite'
 import { vitePluginDeployFtp, vitePluginDeployOss } from '../src'
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode }): UserConfig => {
   const shouldDeployFtp = mode === 'ftp' || mode === 'ftp-debug' || process.env.DEPLOY_FTP === '1'
   const shouldDeployOss = mode === 'oss' || mode === 'oss-debug' || process.env.DEPLOY_OSS === '1'
   const isFtpDebug = mode === 'ftp-debug' || process.env.DEPLOY_FTP_DEBUG === '1'
@@ -12,6 +13,7 @@ export default defineConfig(({ mode }) => {
       vitePluginDeployOss({
         open: shouldDeployOss,
         debug: isOssDebug,
+        showUploadedFiles: isOssDebug,
         accessKeyId: process.env.zAccessKeyId || '',
         accessKeySecret: process.env.zAccessKeySecret || '',
         bucket: process.env.zBucket || '',
@@ -28,6 +30,7 @@ export default defineConfig(({ mode }) => {
       vitePluginDeployFtp({
         open: shouldDeployFtp,
         debug: isFtpDebug,
+        showUploadedFiles: isFtpDebug,
         uploadPath: '/__test/vite-plugin-upload/ftp/',
         singleBack: true,
         // autoUpload: true,
@@ -51,7 +54,7 @@ export default defineConfig(({ mode }) => {
           },
         ],
       }),
-    ],
+    ] as UserConfig['plugins'],
 
     base: './',
 

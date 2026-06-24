@@ -6,6 +6,7 @@ import stringWidth from 'string-width'
 export interface TerminalRow {
   label: string
   value: string
+  preserveValue?: boolean
 }
 
 type PanelTone = 'info' | 'success' | 'warning' | 'danger'
@@ -26,11 +27,6 @@ const fitVisual = (text: string, width: number) => {
   return padVisual(cliTruncate(text, width, { position: 'middle' }), width)
 }
 
-export const truncateTerminalText = (text: string, reservedWidth = 26): string => {
-  const maxWidth = Math.max(24, Math.min(88, getTerminalWidth() - reservedWidth))
-  return cliTruncate(text, maxWidth, { position: 'middle' })
-}
-
 export const renderPanel = (title: string, rows: TerminalRow[], tone: PanelTone = 'info', footer?: string): string => {
   const titleColor = panelTitleColor[tone]
   const innerWidth = getPanelInnerWidth()
@@ -42,7 +38,8 @@ export const renderPanel = (title: string, rows: TerminalRow[], tone: PanelTone 
       const paddedLabel = padVisual(normalizeLabel(row.label), labelWidth)
       const prefix = `  ${paddedLabel}  `
       const availableValueWidth = Math.max(8, innerWidth - stringWidth(prefix))
-      contentLines.push(`${chalk.gray(prefix)}${fitVisual(row.value, availableValueWidth)}`)
+      const value = row.preserveValue ? row.value : fitVisual(row.value, availableValueWidth)
+      contentLines.push(`${chalk.gray(prefix)}${value}`)
     }
   }
 

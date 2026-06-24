@@ -169,6 +169,44 @@ test('keeps local empty directories when OSS autoDelete is disabled', async () =
   }
 })
 
+test('prints successfully uploaded OSS files when enabled', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  writeFileSync(join(outDir, 'a.js'), 'a')
+  writeFileSync(join(outDir, 'b.css'), 'b')
+  const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+  ossMock.put.mockResolvedValue({ res: { status: 200 } })
+
+  try {
+    await deployOss({
+      open: true,
+      accessKeyId: 'id',
+      accessKeySecret: 'secret',
+      bucket: 'bucket',
+      region: 'oss-cn-hangzhou',
+      uploadDir: 'assets',
+      outDir,
+      showUploadedFiles: true,
+      retryTimes: 1,
+      fancy: false,
+    })
+
+    const output = consoleLog.mock.calls.map((call) => call.join(' ')).join('\n')
+    expect(output).toContain('上传成功文件')
+    expect(output).toContain('• a.js · 1 B -> assets/a.js')
+    expect(output).toContain('• b.css · 1 B -> assets/b.css')
+
+    const calls = consoleLog.mock.calls.map((call) => call.join(' '))
+    const lastUploadedFileIndex = Math.max(
+      calls.findIndex((line) => line.includes('• a.js · 1 B -> assets/a.js')),
+      calls.findIndex((line) => line.includes('• b.css · 1 B -> assets/b.css')),
+    )
+    expect(calls[lastUploadedFileIndex + 1]).toBe('')
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
 test('returns uploaded OSS results when manifest upload fails without throwing', async () => {
   const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
   writeFileSync(join(outDir, 'a.js'), 'a')

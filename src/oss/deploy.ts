@@ -16,7 +16,7 @@ import {
   resolveUploadedFileUrl,
 } from './utils/path'
 import { formatBytes, formatDuration } from './utils/progress'
-import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel, truncateTerminalText } from './utils/terminal'
+import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel } from './utils/terminal'
 
 interface DebugTimingEntry {
   label: string
@@ -38,14 +38,23 @@ const formatTimingDuration = (durationMs: number): string => {
 const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
   const rows = entries.map((entry) => ({
     label: `${entry.label}:`,
-    value: chalk.cyan(
-      entry.detail
-        ? `${formatTimingDuration(entry.durationMs)} · ${truncateTerminalText(entry.detail, 24)}`
-        : formatTimingDuration(entry.durationMs),
-    ),
+    value: chalk.cyan(entry.detail ? `${formatTimingDuration(entry.durationMs)} · ${entry.detail}` : formatTimingDuration(entry.durationMs)),
   }))
 
   return renderPanel(`${getPanelDot('success')} 调试耗时`, rows, 'info')
+}
+
+const printUploadedFiles = (results: UploadResult[]) => {
+  const uploadedFiles = results.filter((result) => result.success)
+  if (uploadedFiles.length === 0) return
+
+  console.log(`${getPanelDot('success')} ${chalk.green.bold('上传成功文件')}`)
+  uploadedFiles.forEach((result) => {
+    console.log(
+      `  ${chalk.green('•')} ${chalk.cyan(result.relativeFilePath)} ${chalk.gray(`· ${formatBytes(result.size)}`)} ${chalk.gray('->')} ${chalk.yellow(result.name)}`,
+    )
+  })
+  console.log()
 }
 
 const createManifestPayload = async (
@@ -111,6 +120,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     open = true,
     debug = false,
     fancy = true,
+    showUploadedFiles = false,
     noCache = false,
     failOnError = true,
     concurrency = 5,
@@ -190,9 +200,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
             try {
               await unlink(task.filePath)
             } catch {
-              console.warn(
-                `${getLogSymbol('warning')} 删除本地文件失败: ${truncateTerminalText(task.relativeFilePath, 18)}`,
-              )
+              console.warn(`${getLogSymbol('warning')} 删除本地文件失败: ${task.relativeFilePath}`)
             }
           }
 
@@ -211,7 +219,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         if (attempt === maxRetries) {
           if (!silentLogs) {
             const reason = error instanceof Error ? error.message : String(error)
-            console.log(`${getLogSymbol('danger')} ${truncateTerminalText(task.relativeFilePath, 18)}  ${reason}`)
+            console.log(`${getLogSymbol('danger')} ${task.relativeFilePath}  ${reason}`)
           }
           return {
             success: false,
@@ -226,7 +234,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
         if (!silentLogs) {
           console.log(
-            `${getLogSymbol('warning')} ${truncateTerminalText(task.relativeFilePath, 18)}  正在重试 (${attempt}/${maxRetries})`,
+            `${getLogSymbol('warning')} ${task.relativeFilePath}  正在重试 (${attempt}/${maxRetries})`,
           )
         }
         await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000 * attempt))
@@ -439,7 +447,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
   if (files.length === 0) {
     console.log(`${getLogSymbol('warning')} 没有找到需要上传的文件`)
-    console.log()
+    if (!showUploadedFiles) console.log()
     return {
       success: true,
       results: [],
@@ -458,16 +466,13 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         { label: '位置:', value: chalk.green(`${bucket} · ${region}`) },
         {
           label: '目标:',
-          value: chalk.yellow(
-            truncateTerminalText(
-              normalizedAlias ? `${normalizedUploadDir || '/'} · ${normalizedAlias}` : normalizedUploadDir || '/',
-              18,
-            ),
-          ),
+          value: chalk.yellow(normalizedAlias ? `${normalizedUploadDir || '/'} · ${normalizedAlias}` : normalizedUploadDir || '/'),
+          preserveValue: true,
         },
         {
           label: '文件:',
-          value: chalk.blue(`${files.length} 个 · ${truncateTerminalText(resolvedOutDir, 30)}`),
+          value: chalk.blue(`${files.length} 个 · ${resolvedOutDir}`),
+          preserveValue: true,
         },
       ],
       'info',
@@ -492,8 +497,12 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     const avgSpeed = durationSeconds > 0 ? uploadedBytes / durationSeconds : 0
     let manifestSummary: string | null = null
     let manifestUrl: string | undefined
+    let uploadedFileResults = results
 
     if (failedCount > 0 && failOnError) {
+      if (showUploadedFiles) {
+        printUploadedFiles(results)
+      }
       throw new Error(`Failed to upload ${failedCount} of ${results.length} files`)
     }
 
@@ -531,6 +540,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         completedResults = [...results, manifestResult]
         throw manifestResult.error || new Error(`Failed to upload manifest: ${manifestRelativeFilePath}`)
       }
+      uploadedFileResults = [...results, manifestResult]
       if (debug) {
         debugEntries.push({
           label: '上传清单文件',
@@ -590,9 +600,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       resultRows.push(
         ...failedItems.map((item, index) => ({
           label: `失败 ${index + 1}`,
-          value: chalk.red(
-            `${truncateTerminalText(item.name, 26)} · ${truncateTerminalText(item.error?.message || 'unknown error', 22)}`,
-          ),
+          value: chalk.red(`${item.name} · ${item.error?.message || 'unknown error'}`),
+          preserveValue: true,
         })),
       )
       if (failedCount > failedItems.length) {
@@ -611,6 +620,10 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       ),
     )
 
+    if (showUploadedFiles) {
+      printUploadedFiles(uploadedFileResults)
+    }
+
     if (debug) {
       debugEntries.push({
         label: '总耗时',
@@ -619,7 +632,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       console.log(renderDebugPanel(debugEntries))
     }
 
-    console.log()
+    if (!showUploadedFiles) console.log()
     return {
       success: failedCount === 0,
       results,
@@ -641,6 +654,10 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     if (failOnError) {
       console.log()
       throw error instanceof Error ? error : new Error(String(error))
+    }
+
+    if (showUploadedFiles) {
+      printUploadedFiles(completedResults)
     }
 
     const uploadedBytes = completedResults.reduce((sum, result) => (result.success ? sum + result.size : sum), 0)

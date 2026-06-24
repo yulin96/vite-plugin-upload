@@ -9,6 +9,7 @@ export interface BaseOption {
   maxRetries?: number
   retryDelay?: number
   showBackFile?: boolean
+  showUploadedFiles?: boolean
   autoUpload?: boolean
   fancy?: boolean
   failOnError?: boolean
