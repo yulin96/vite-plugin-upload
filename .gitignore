@@ -4,3 +4,5 @@ dist
 .DS_Store
 
 __dist__
+
+playground/public
