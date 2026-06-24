@@ -460,9 +460,12 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     ),
   )
 
+  let completedResults: UploadResult[] = []
+
   try {
     const uploadExecution = await uploadFilesInBatches(client, files, concurrency)
     const { results, debugEntries: uploadDebugEntries } = uploadExecution
+    completedResults = results
     if (debug) {
       debugEntries.push(...uploadDebugEntries)
     }
@@ -511,6 +514,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       })
 
       if (!manifestResult.success) {
+        completedResults = [...results, manifestResult]
         throw manifestResult.error || new Error(`Failed to upload manifest: ${manifestRelativeFilePath}`)
       }
       if (debug) {
@@ -532,17 +536,19 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       console.warn(`${getLogSymbol('warning')} 有文件上传失败，已跳过清单文件`)
     }
 
-    try {
-      const cleanupStartedAt = Date.now()
-      await removeEmptyDirectories(resolvedOutDir)
-      if (debug) {
-        debugEntries.push({
-          label: '清理空目录',
-          durationMs: Date.now() - cleanupStartedAt,
-        })
+    if (effectiveAutoDelete) {
+      try {
+        const cleanupStartedAt = Date.now()
+        await removeEmptyDirectories(resolvedOutDir)
+        if (debug) {
+          debugEntries.push({
+            label: '清理空目录',
+            durationMs: Date.now() - cleanupStartedAt,
+          })
+        }
+      } catch (error) {
+        console.warn(`${getLogSymbol('warning')} 清理空目录失败: ${error}`)
       }
-    } catch (error) {
-      console.warn(`${getLogSymbol('warning')} 清理空目录失败: ${error}`)
     }
 
     const resultRows = [
@@ -621,13 +627,16 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       throw error instanceof Error ? error : new Error(String(error))
     }
 
+    const uploadedBytes = completedResults.reduce((sum, result) => (result.success ? sum + result.size : sum), 0)
+    const retryCount = completedResults.reduce((sum, result) => sum + result.retries, 0)
+
     return {
       success: false,
-      results: [],
+      results: completedResults,
       outDir: resolvedOutDir,
       durationSeconds: (Date.now() - startTime) / 1000,
-      uploadedBytes: 0,
-      retryCount: 0,
+      uploadedBytes,
+      retryCount,
     }
   }
 }

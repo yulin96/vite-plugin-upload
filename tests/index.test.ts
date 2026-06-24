@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Plugin } from 'vite'
@@ -99,6 +99,70 @@ test('skips OSS manifest when any upload fails', async () => {
       expect.any(String),
       expect.any(Object),
     )
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test('keeps local empty directories when OSS autoDelete is disabled', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  const emptyDir = join(outDir, 'empty')
+  mkdirSync(emptyDir)
+  writeFileSync(join(outDir, 'a.js'), 'a')
+
+  ossMock.put.mockResolvedValue({ res: { status: 200 } })
+
+  try {
+    await deployOss({
+      open: true,
+      accessKeyId: 'id',
+      accessKeySecret: 'secret',
+      bucket: 'bucket',
+      region: 'oss-cn-hangzhou',
+      uploadDir: 'assets',
+      outDir,
+      autoDelete: false,
+      retryTimes: 1,
+      fancy: false,
+    })
+
+    expect(existsSync(emptyDir)).toBe(true)
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test('returns uploaded OSS results when manifest upload fails without throwing', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  writeFileSync(join(outDir, 'a.js'), 'a')
+
+  ossMock.put.mockImplementation(async (name: string) => ({
+    res: { status: name.endsWith('oss-manifest.json') ? 500 : 200 },
+  }))
+
+  try {
+    const result = await deployOss({
+      open: true,
+      accessKeyId: 'id',
+      accessKeySecret: 'secret',
+      bucket: 'bucket',
+      region: 'oss-cn-hangzhou',
+      uploadDir: 'assets',
+      outDir,
+      manifest: true,
+      retryTimes: 1,
+      failOnError: false,
+      fancy: false,
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ relativeFilePath: 'a.js', success: true }),
+        expect.objectContaining({ relativeFilePath: 'oss-manifest.json', success: false }),
+      ]),
+    )
+    expect(result.uploadedBytes).toBe(1)
   } finally {
     rmSync(outDir, { recursive: true, force: true })
   }
