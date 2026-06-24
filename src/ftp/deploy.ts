@@ -357,6 +357,8 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
     const extraWorkerCount = reusableClient ? Math.max(0, safeWindowSize - 1) : safeWindowSize
     const silentLogs = Boolean(useInteractiveOutput)
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    let spinnerFrameIndex = 0
     const progressBar =
       useInteractiveOutput ?
         new cliProgress.SingleBar({
@@ -366,7 +368,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           barsize: 18,
           barCompleteChar: '█',
           barIncompleteChar: '░',
-          format: `${chalk.gray('上传')} ${chalk.bold('{percentage}%')} ${chalk.cyan('{bar}')} ${chalk.gray('·')} ${chalk.magenta('{speed}/s')} ${chalk.gray('·')} ${chalk.gray('{elapsed}')}s`,
+          format: `${chalk.cyan('{spinner}')} ${chalk.gray('上传')} ${chalk.bold('{percentage}%')} ${chalk.cyan('{bar}')} ${chalk.gray('·')} ${chalk.magenta('{speed}/s')} ${chalk.gray('·')} ${chalk.gray('{elapsed}')}s`,
         })
       : null
     const reportEvery = Math.max(1, Math.ceil(totalFiles / 6))
@@ -380,6 +382,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
     if (progressBar) {
       progressBar.start(totalFiles, 0, {
+        spinner: spinnerFrames[spinnerFrameIndex],
         speed: formatBytes(0),
         elapsed: '0',
       })
@@ -409,12 +412,19 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       }
 
       progressBar.update(completed, {
+        spinner: spinnerFrames[spinnerFrameIndex],
         speed: chalk.magenta(formatBytes(speed)),
         elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
       })
     }
 
-    const refreshTimer = progressBar ? setInterval(updateProgress, 120) : null
+    const refreshTimer =
+      progressBar ?
+        setInterval(() => {
+          spinnerFrameIndex = (spinnerFrameIndex + 1) % spinnerFrames.length
+          updateProgress()
+        }, 120)
+      : null
     let currentTaskIndex = 0
 
     const worker = async () => {
@@ -619,6 +629,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       const elapsedSeconds = (Date.now() - startAt) / 1000
       const speed = elapsedSeconds > 0 ? uploadedBytes / elapsedSeconds : 0
       progressBar.update(totalFiles, {
+        spinner: spinnerFrames[spinnerFrameIndex],
         speed: chalk.magenta(formatBytes(speed)),
         elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
       })

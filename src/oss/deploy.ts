@@ -303,6 +303,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     const startAt = Date.now()
     const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
     const silentLogs = Boolean(useInteractiveOutput)
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    let spinnerFrameIndex = 0
 
     const progressBar = useInteractiveOutput
       ? new cliProgress.SingleBar({
@@ -312,7 +314,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
           barsize: 18,
           barCompleteChar: '█',
           barIncompleteChar: '░',
-          format: `${chalk.gray('上传')} ${chalk.bold('{percentage}%')} ${chalk.cyan('{bar}')} ${chalk.gray('·')} ${chalk.magenta('{speed}/s')} ${chalk.gray('·')} ${chalk.gray('{elapsed}')}s`,
+          format: `${chalk.cyan('{spinner}')} ${chalk.gray('上传')} ${chalk.bold('{percentage}%')} ${chalk.cyan('{bar}')} ${chalk.gray('·')} ${chalk.magenta('{speed}/s')} ${chalk.gray('·')} ${chalk.gray('{elapsed}')}s`,
         })
       : null
     const reportEvery = Math.max(1, Math.ceil(totalFiles / 6))
@@ -320,6 +322,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
     if (progressBar) {
       progressBar.start(totalFiles, 0, {
+        spinner: spinnerFrames[spinnerFrameIndex],
         speed: formatBytes(0),
         elapsed: '0',
       })
@@ -347,13 +350,20 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         }
       } else {
         progressBar.update(completed, {
+          spinner: spinnerFrames[spinnerFrameIndex],
           speed: chalk.magenta(formatBytes(speed)),
           elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
         })
       }
     }
 
-    const refreshTimer = progressBar ? setInterval(updateProgress, 120) : null
+    const refreshTimer =
+      progressBar
+        ? setInterval(() => {
+            spinnerFrameIndex = (spinnerFrameIndex + 1) % spinnerFrames.length
+            updateProgress()
+          }, 120)
+        : null
     let currentIndex = 0
 
     const worker = async () => {
@@ -389,6 +399,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       const elapsedSeconds = (Date.now() - startAt) / 1000
       const speed = elapsedSeconds > 0 ? uploadedBytes / elapsedSeconds : 0
       progressBar.update(totalFiles, {
+        spinner: spinnerFrames[spinnerFrameIndex],
         speed: chalk.magenta(formatBytes(speed)),
         elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
       })
