@@ -543,7 +543,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         normalizedConfigBase,
         normalizedAlias,
       )
-      manifestSummary = truncateTerminalText(manifestUrl || manifestObjectKey, 20)
+      manifestSummary = manifestUrl || manifestObjectKey
     } else if (manifestFileName && failedCount > 0) {
       console.warn(`${getLogSymbol('warning')} 有文件上传失败，已跳过清单文件`)
     }
@@ -580,7 +580,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
           formatDuration(durationSeconds),
         ]),
       },
-      ...(manifestSummary ? [{ label: '清单:', value: chalk.cyan(manifestSummary) }] : []),
+      ...(manifestSummary ? [{ label: '清单:', value: chalk.cyan(manifestSummary), preserveValue: true }] : []),
     ]
 
     if (failedCount > 0) {
