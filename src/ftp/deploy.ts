@@ -19,13 +19,7 @@ import type {
 } from './types'
 import { createTempDir, createZipFile, getAllFiles } from './utils/file'
 import { connectWithRetry, sleep, validateFtpConfig } from './utils/ftp'
-import {
-  getLogSymbol,
-  getPanelDot,
-  renderInlineStats,
-  renderPanel,
-  type TerminalRow,
-} from './utils/output'
+import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel, type TerminalRow } from './utils/output'
 import {
   normalizeFtpUploadPath,
   normalizeRemotePath,
@@ -90,7 +84,11 @@ const renderBackupPanel = (summary: BackupSummary): string => {
 const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
   const rows = entries.map((entry) => ({
     label: `${entry.label}:`,
-    value: chalk.cyan(entry.detail ? `${formatTimingDuration(entry.durationMs)} · ${entry.detail}` : formatTimingDuration(entry.durationMs)),
+    value: chalk.cyan(
+      entry.detail ?
+        `${formatTimingDuration(entry.durationMs)} · ${entry.detail}`
+      : formatTimingDuration(entry.durationMs),
+    ),
   }))
 
   return renderPanel(`${getPanelDot('success')} 调试耗时`, rows, 'info')
@@ -698,7 +696,9 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           },
           {
             label: '目标:',
-            value: chalk.yellow(normalizedAlias ? `${normalizedUploadPath} · ${normalizedAlias}` : normalizedUploadPath),
+            value: chalk.yellow(
+              normalizedAlias ? `${normalizedUploadPath} · ${normalizedAlias}` : normalizedUploadPath,
+            ),
             preserveValue: true,
           },
           {
@@ -903,6 +903,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
   const deployToFtp = async (): Promise<DeployTargetResult[]> => {
     if (!autoUpload) {
+      console.log()
       const ftpUploadChoice = await select({
         message: '是否上传FTP',
         choices: ['是', '否'],

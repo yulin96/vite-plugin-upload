@@ -13,7 +13,7 @@ export default defineConfig(({ mode }): UserConfig => {
       vitePluginDeployOss({
         open: shouldDeployOss,
         debug: isOssDebug,
-        showUploadedFiles: isOssDebug,
+        // showUploadedFiles: isOssDebug,
         accessKeyId: process.env.zAccessKeyId || '',
         accessKeySecret: process.env.zAccessKeySecret || '',
         bucket: process.env.zBucket || '',
@@ -30,7 +30,7 @@ export default defineConfig(({ mode }): UserConfig => {
       vitePluginDeployFtp({
         open: shouldDeployFtp,
         debug: isFtpDebug,
-        showUploadedFiles: isFtpDebug,
+        // showUploadedFiles: isFtpDebug,
         uploadPath: '/__test/vite-plugin-upload/ftp/',
         singleBack: true,
         // autoUpload: true,

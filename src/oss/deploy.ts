@@ -38,7 +38,11 @@ const formatTimingDuration = (durationMs: number): string => {
 const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
   const rows = entries.map((entry) => ({
     label: `${entry.label}:`,
-    value: chalk.cyan(entry.detail ? `${formatTimingDuration(entry.durationMs)} · ${entry.detail}` : formatTimingDuration(entry.durationMs)),
+    value: chalk.cyan(
+      entry.detail ?
+        `${formatTimingDuration(entry.durationMs)} · ${entry.detail}`
+      : formatTimingDuration(entry.durationMs),
+    ),
   }))
 
   return renderPanel(`${getPanelDot('success')} 调试耗时`, rows, 'info')
@@ -156,7 +160,10 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
   const normalizedAlias = alias ? normalizeUrlLikeBase(alias) : undefined
   const manifestFileName = resolveManifestFileName(manifest)
   const effectiveAutoDelete = manifestFileName ? false : autoDelete
-  const effectiveSkip = manifestFileName ? [] : Array.isArray(skip) ? skip : [skip]
+  const effectiveSkip =
+    manifestFileName ? []
+    : Array.isArray(skip) ? skip
+    : [skip]
   const resolvedOutDir = normalizeSlash(resolve(outDir))
   const useInteractiveOutput =
     fancy && Boolean(process.stdout?.isTTY) && Boolean(process.stderr?.isTTY) && !process.env.CI
@@ -183,8 +190,9 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const result = shouldUseMultipart
-          ? await client.multipartUpload(task.name, task.filePath, {
+        const result =
+          shouldUseMultipart ?
+            await client.multipartUpload(task.name, task.filePath, {
               timeout: 600000,
               partSize: 1024 * 1024,
               parallel: Math.max(1, Math.min(concurrency, 4)),
@@ -233,9 +241,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         }
 
         if (!silentLogs) {
-          console.log(
-            `${getLogSymbol('warning')} ${task.relativeFilePath}  正在重试 (${attempt}/${maxRetries})`,
-          )
+          console.log(`${getLogSymbol('warning')} ${task.relativeFilePath}  正在重试 (${attempt}/${maxRetries})`)
         }
         await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000 * attempt))
       }
@@ -314,8 +320,9 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     let spinnerFrameIndex = 0
 
-    const progressBar = useInteractiveOutput
-      ? new cliProgress.SingleBar({
+    const progressBar =
+      useInteractiveOutput ?
+        new cliProgress.SingleBar({
           hideCursor: true,
           clearOnComplete: true,
           stopOnComplete: true,
@@ -366,12 +373,12 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     }
 
     const refreshTimer =
-      progressBar
-        ? setInterval(() => {
-            spinnerFrameIndex = (spinnerFrameIndex + 1) % spinnerFrames.length
-            updateProgress()
-          }, 120)
-        : null
+      progressBar ?
+        setInterval(() => {
+          spinnerFrameIndex = (spinnerFrameIndex + 1) % spinnerFrames.length
+          updateProgress()
+        }, 120)
+      : null
     let currentIndex = 0
 
     const worker = async () => {
@@ -459,6 +466,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
   }
 
   clearViewport()
+  console.log()
   console.log(
     renderPanel(
       `${getPanelDot('success')} 准备部署`,
@@ -466,7 +474,9 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         { label: '位置:', value: chalk.green(`${bucket} · ${region}`) },
         {
           label: '目标:',
-          value: chalk.yellow(normalizedAlias ? `${normalizedUploadDir || '/'} · ${normalizedAlias}` : normalizedUploadDir || '/'),
+          value: chalk.yellow(
+            normalizedAlias ? `${normalizedUploadDir || '/'} · ${normalizedAlias}` : normalizedUploadDir || '/',
+          ),
           preserveValue: true,
         },
         {
@@ -579,9 +589,9 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       {
         label: '结果:',
         value:
-          failedCount === 0
-            ? chalk.green(`${successCount}/${results.length} 全部成功`)
-            : chalk.yellow(`成功 ${successCount} 个，失败 ${failedCount} 个`),
+          failedCount === 0 ?
+            chalk.green(`${successCount}/${results.length} 全部成功`)
+          : chalk.yellow(`成功 ${successCount} 个，失败 ${failedCount} 个`),
       },
       {
         label: '统计:',
