@@ -6,7 +6,12 @@
     <title>vite-plugin-upload playground</title>
   </head>
   <body>
-    <div id="app">vite-plugin-upload playground</div>
+    <div id="app">hello vite-plugin-upload playground .</div>
+    <div id="name"></div>
     <script type="module" src="/main.ts"></script>
   </body>
+  <script>
+    const name = document.getElementById('name')
+    name.textContent = location.href
+  </script>
 </html>
