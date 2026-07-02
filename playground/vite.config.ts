@@ -24,7 +24,7 @@ export default defineConfig(({ mode }): UserConfig => {
         overwrite: true,
         autoDelete: false,
         manifest: {
-          run: ['./index.html', './index.html?123'],
+          run: ['./index.html', './test.html'],
         },
         configBase: `${process.env.zBucketAlias || ''}/test/vite-plugin-upload/oss/`,
       }),

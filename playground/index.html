@@ -4,14 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>vite-plugin-upload playground</title>
+    <script>
+      window?.api?.onScreenMessage((message) => {
+        alert(`收到消息: ${JSON.stringify(message)}`)
+      })
+
+      function test() {
+        window?.api?.sendToScreen(2, '测试消息-第二屏', {
+          name: 'vite-plugin-upload',
+        })
+      }
+    </script>
   </head>
   <body>
     <div id="app">hello vite-plugin-upload playground .</div>
-    <div id="name"></div>
+    <button onclick="test()">发送消息</button>
     <script type="module" src="/main.ts"></script>
   </body>
-  <script>
-    const name = document.getElementById('name')
-    name.textContent = location.href
-  </script>
 </html>
