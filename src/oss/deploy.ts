@@ -65,6 +65,7 @@ const createManifestPayload = async (
   results: UploadResult[],
   configBase?: string,
   alias?: string,
+  run?: string | string[],
 ): Promise<ManifestPayload> => {
   const successfulResults = results.filter((result) => result.success)
 
@@ -82,6 +83,7 @@ const createManifestPayload = async (
 
   return {
     version: Date.now(),
+    ...(run === undefined ? {} : { run }),
     files,
   }
 }
@@ -159,6 +161,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
   const normalizedConfigBase = configBase ? ensureTrailingSlash(normalizeUrlLikeBase(configBase)) : undefined
   const normalizedAlias = alias ? normalizeUrlLikeBase(alias) : undefined
   const manifestFileName = resolveManifestFileName(manifest)
+  const manifestRun = typeof manifest === 'object' ? manifest.run : undefined
   const effectiveAutoDelete = manifestFileName ? false : autoDelete
   const effectiveSkip =
     manifestFileName ? []
@@ -525,7 +528,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       await mkdir(dirname(manifestFilePath), { recursive: true })
       await writeFile(
         manifestFilePath,
-        JSON.stringify(await createManifestPayload(results, normalizedConfigBase, normalizedAlias), null, 2),
+        JSON.stringify(await createManifestPayload(results, normalizedConfigBase, normalizedAlias, manifestRun), null, 2),
         'utf8',
       )
       if (debug) {

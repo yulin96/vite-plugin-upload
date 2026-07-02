@@ -28,7 +28,9 @@ export default defineConfig({
       region: process.env.OSS_REGION || '',
       uploadDir: 'H5/demo/prod',
       configBase: 'https://example.com/H5/demo/prod/',
-      manifest: true,
+      manifest: {
+        run: './index.html',
+      },
     }),
 
     vitePluginDeployFtp({
@@ -199,6 +201,7 @@ deploy-oss --config deploy-oss.config.mjs
 - FTP supports multiple upload paths and multiple FTP server configs.
 - FTP can back up remote files before uploading.
 - OSS `manifest: true` keeps local files and ignores the default `skip`.
+- OSS `manifest: { run: './index.html' }` writes a runnable entry to the manifest. `run` supports `string` or `string[]`.
 - OSS `configBase` changes Vite output paths and manifest URLs.
 - The package only supports ESM import syntax.
 

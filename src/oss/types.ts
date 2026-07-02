@@ -2,6 +2,7 @@ import type oss from 'ali-oss'
 
 export interface ManifestOption {
   fileName?: string
+  run?: string | string[]
 }
 
 export type ManifestConfig = boolean | ManifestOption | undefined
@@ -79,5 +80,6 @@ export interface ManifestFileItem {
 
 export interface ManifestPayload {
   version: number
+  run?: string | string[]
   files: ManifestFileItem[]
 }

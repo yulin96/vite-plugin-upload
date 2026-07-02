@@ -23,7 +23,9 @@ export default defineConfig(({ mode }): UserConfig => {
         // skip: ['**/*.html', '**/pluginWebUpdateNotice/**'],
         overwrite: true,
         autoDelete: false,
-        manifest: true,
+        manifest: {
+          run: ['./index.html'],
+        },
         configBase: `${process.env.zBucketAlias || ''}/test/vite-plugin-upload/oss/`,
       }),
 

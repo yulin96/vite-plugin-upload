@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Plugin } from 'vite'
@@ -238,6 +238,36 @@ test('returns uploaded OSS results when manifest upload fails without throwing',
       ]),
     )
     expect(result.uploadedBytes).toBe(1)
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test.each([
+  './index.html',
+  ['./index.html?123'],
+])('writes OSS manifest run entry %j', async (run) => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  writeFileSync(join(outDir, 'a.js'), 'a')
+
+  ossMock.put.mockResolvedValue({ res: { status: 200 } })
+
+  try {
+    await deployOss({
+      open: true,
+      accessKeyId: 'id',
+      accessKeySecret: 'secret',
+      bucket: 'bucket',
+      region: 'oss-cn-hangzhou',
+      uploadDir: 'assets',
+      outDir,
+      manifest: { run },
+      retryTimes: 1,
+      fancy: false,
+    })
+
+    const manifest = JSON.parse(readFileSync(join(outDir, 'oss-manifest.json'), 'utf8')) as { run?: unknown }
+    expect(manifest.run).toEqual(run)
   } finally {
     rmSync(outDir, { recursive: true, force: true })
   }
