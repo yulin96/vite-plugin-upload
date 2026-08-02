@@ -1,12 +1,11 @@
 import { checkbox, select } from '@inquirer/prompts'
-import { Client, FileType } from 'basic-ftp'
+import { Client } from 'basic-ftp'
 import chalk from 'chalk'
 import cliProgress from 'cli-progress'
-import dayjs from 'dayjs'
-import fs from 'node:fs'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import ora from 'ora'
+import { printUploadedFiles, renderDebugPanel, type DebugTimingEntry } from '../shared/deploy-output'
 import type {
   BackupSummary,
   DeployFtpOption,
@@ -17,26 +16,18 @@ import type {
   UploadResult,
   UploadTask,
 } from './types'
-import { createTempDir, createZipFile, getAllFiles } from './utils/file'
+import { createBackupFile, createSingleBackup, renderBackupPanel } from './backup'
+import { getFtpUploadFiles } from './utils/file'
 import { connectWithRetry, sleep, validateFtpConfig } from './utils/ftp'
 import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel, type TerminalRow } from './utils/output'
 import {
   normalizeFtpUploadPath,
   normalizeRemotePath,
-  normalizeSelectionPath,
   normalizeSlash,
   normalizeUrlLikeBase,
   resolveDisplayUrl,
 } from './utils/path'
 import { formatBytes, formatDuration } from './utils/progress'
-
-const backupArchivePattern = /^backup_\d{8}_\d{6}\.zip$/i
-
-interface DebugTimingEntry {
-  label: string
-  durationMs: number
-  detail?: string
-}
 
 interface UploadDebugMetrics {
   connectMs: number
@@ -52,59 +43,6 @@ interface UploadBatchExecution {
 
 interface ReusableUploadClient {
   client: Client
-}
-
-const formatTimingDuration = (durationMs: number): string => {
-  if (durationMs < 1000) return `${durationMs}ms`
-  const seconds = durationMs / 1000
-  return `${seconds.toFixed(seconds >= 10 ? 1 : 2)}s`
-}
-
-const renderBackupPanel = (summary: BackupSummary): string => {
-  const previewItems = summary.items.slice(0, 2)
-  const rows = [
-    { label: '结果:', value: chalk.green(`${summary.items.length} 个备份文件`) },
-    ...previewItems.map((item, index) => ({
-      label: `文件 ${index + 1}:`,
-      value: chalk.cyan(item),
-      preserveValue: true,
-    })),
-  ]
-
-  if (summary.items.length > previewItems.length) {
-    rows.push({
-      label: '其余:',
-      value: chalk.gray(`还有 ${summary.items.length - previewItems.length} 个备份项未展开`),
-    })
-  }
-
-  return renderPanel(`${getPanelDot('success')} ${summary.title}`, rows, 'success')
-}
-
-const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
-  const rows = entries.map((entry) => ({
-    label: `${entry.label}:`,
-    value: chalk.cyan(
-      entry.detail ?
-        `${formatTimingDuration(entry.durationMs)} · ${entry.detail}`
-      : formatTimingDuration(entry.durationMs),
-    ),
-  }))
-
-  return renderPanel(`${getPanelDot('success')} 调试耗时`, rows, 'info')
-}
-
-const printUploadedFiles = (results: UploadResult[]) => {
-  const uploadedFiles = results.filter((result) => result.success)
-  if (uploadedFiles.length === 0) return
-
-  console.log(`${getPanelDot('success')} ${chalk.green.bold('上传成功文件')}`)
-  uploadedFiles.forEach((result) => {
-    console.log(
-      `  ${chalk.green('•')} ${chalk.cyan(result.relativeFilePath)} ${chalk.gray(`· ${formatBytes(result.size)}`)} ${chalk.gray('->')} ${chalk.yellow(result.name)}`,
-    )
-  })
-  console.log()
 }
 
 export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResult> => {
@@ -340,7 +278,6 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     const totalBytes = tasks.reduce((sum, task) => sum + task.size, 0)
     const startAt = Date.now()
     const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
-    const extraWorkerCount = reusableClient ? Math.max(0, safeWindowSize - 1) : safeWindowSize
     const silentLogs = Boolean(useInteractiveOutput)
     const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     let spinnerFrameIndex = 0
@@ -412,9 +349,10 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       : null
     let currentTaskIndex = 0
 
-    const worker = async () => {
-      const client = new Client()
-      let connected = false
+    const runWorker = async (seed?: ReusableUploadClient) => {
+      const client = seed?.client ?? new Client()
+      const ownsClient = !seed
+      let connected = Boolean(seed)
       let currentRelativeDir = ''
       let rooted = false
       const ensuredRelativeDirs = new Set<string>()
@@ -440,27 +378,19 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
       const ensureRemoteDir = async (remoteDir: string) => {
         await ensureRootDir()
-
         const relativeDir =
           remoteDir === normalizedTargetDir ? '' : remoteDir.slice(normalizedTargetDir.length).replace(/^\/+/, '')
-
         if (currentRelativeDir === relativeDir) return
-
-        if (!relativeDir) {
-          const switchStartedAt = Date.now()
-          await client.cd(normalizedTargetDir)
-          currentRelativeDir = ''
-          debugMetrics.switchDirMs += Date.now() - switchStartedAt
-          return
-        }
 
         const switchStartedAt = Date.now()
         await client.cd(normalizedTargetDir)
-        if (!ensuredRelativeDirs.has(relativeDir)) {
-          await client.ensureDir(relativeDir)
-          ensuredRelativeDirs.add(relativeDir)
-        } else {
-          await client.cd(relativeDir)
+        if (relativeDir) {
+          if (!ensuredRelativeDirs.has(relativeDir)) {
+            await client.ensureDir(relativeDir)
+            ensuredRelativeDirs.add(relativeDir)
+          } else {
+            await client.cd(relativeDir)
+          }
         }
         currentRelativeDir = relativeDir
         debugMetrics.switchDirMs += Date.now() - switchStartedAt
@@ -477,7 +407,6 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         while (true) {
           const taskIndex = currentTaskIndex++
           if (taskIndex >= tasks.length) return
-
           const task = tasks[taskIndex]
           updateProgress()
 
@@ -494,117 +423,22 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
           completed++
           retries += result.retries
-          if (result.success) {
-            uploadedBytes += result.size
-          } else {
-            failed++
-          }
+          if (result.success) uploadedBytes += result.size
+          else failed++
           results.push(result)
           updateProgress()
         }
       } finally {
-        client.close()
-      }
-    }
-
-    const runReusableWorker = async (seed: ReusableUploadClient) => {
-      const client = seed.client
-      let connected = true
-      let currentRelativeDir = ''
-      let rooted = false
-      const ensuredRelativeDirs = new Set<string>()
-
-      const ensureConnected = async () => {
-        if (connected) return
-        const connectStartedAt = Date.now()
-        await connectWithRetry(client, connectConfig, maxRetries, retryDelay, true)
-        connected = true
-        rooted = false
-        currentRelativeDir = ''
-        debugMetrics.connectMs += Date.now() - connectStartedAt
-      }
-
-      const ensureRootDir = async () => {
-        if (rooted) return
-        const rootStartedAt = Date.now()
-        await client.ensureDir(normalizedTargetDir)
-        rooted = true
-        currentRelativeDir = ''
-        debugMetrics.rootDirMs += Date.now() - rootStartedAt
-      }
-
-      const ensureRemoteDir = async (remoteDir: string) => {
-        await ensureRootDir()
-
-        const relativeDir =
-          remoteDir === normalizedTargetDir ? '' : remoteDir.slice(normalizedTargetDir.length).replace(/^\/+/, '')
-
-        if (currentRelativeDir === relativeDir) return
-
-        if (!relativeDir) {
-          const switchStartedAt = Date.now()
-          await client.cd(normalizedTargetDir)
-          currentRelativeDir = ''
-          debugMetrics.switchDirMs += Date.now() - switchStartedAt
-          return
-        }
-
-        const switchStartedAt = Date.now()
-        await client.cd(normalizedTargetDir)
-        if (!ensuredRelativeDirs.has(relativeDir)) {
-          await client.ensureDir(relativeDir)
-          ensuredRelativeDirs.add(relativeDir)
-        } else {
-          await client.cd(relativeDir)
-        }
-        currentRelativeDir = relativeDir
-        debugMetrics.switchDirMs += Date.now() - switchStartedAt
-      }
-
-      const markDisconnected = () => {
-        connected = false
-        rooted = false
-        currentRelativeDir = ''
-        ensuredRelativeDirs.clear()
-      }
-
-      while (true) {
-        const taskIndex = currentTaskIndex++
-        if (taskIndex >= tasks.length) return
-
-        const task = tasks[taskIndex]
-        updateProgress()
-
-        const result = await uploadFileWithRetry(task, {
-          client,
-          ensureConnected,
-          ensureRemoteDir,
-          markDisconnected,
-          silentLogs,
-          maxRetries,
-          retryDelay,
-          debugMetrics,
-        })
-
-        completed++
-        retries += result.retries
-        if (result.success) {
-          uploadedBytes += result.size
-        } else {
-          failed++
-        }
-        results.push(result)
-        updateProgress()
+        if (ownsClient) client.close()
       }
     }
 
     updateProgress()
 
     try {
-      const workers = Array.from({ length: extraWorkerCount }, () => worker())
-      if (reusableClient) {
-        workers.unshift(runReusableWorker(reusableClient))
-      }
+      const newClientWorkerCount = reusableClient ? safeWindowSize - 1 : safeWindowSize
+      const workers = Array.from({ length: newClientWorkerCount }, () => runWorker())
+      if (reusableClient) workers.push(runWorker(reusableClient))
       await Promise.all(workers)
     } finally {
       if (refreshTimer) clearInterval(refreshTimer)
@@ -674,9 +508,9 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     const collectFilesStartedAt = Date.now()
     let allFiles: string[]
     try {
-      allFiles = getAllFiles(outDir)
+      allFiles = getFtpUploadFiles(outDir)
     } catch (error) {
-      const scanError = new Error(`Failed to scan FTP outDir: ${outDir}`, { cause: error })
+      const scanError = error instanceof Error ? error : new Error(String(error))
       console.log(`${getLogSymbol('danger')} ${scanError.message}`)
       return { name: resultName, totalFiles: 0, failedCount: 1, error: scanError }
     }
@@ -686,12 +520,6 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       detail: `${allFiles.length} 个文件`,
     })
     const totalFiles = allFiles.length
-
-    if (allFiles.length === 0) {
-      const emptyOutputError = new Error(`FTP outDir contains no files to upload: ${outDir}`)
-      console.log(`${getLogSymbol('danger')} ${emptyOutputError.message}`)
-      return { name: resultName, totalFiles: 0, failedCount: 1, error: emptyOutputError }
-    }
 
     clearScreen()
     console.log(
@@ -998,14 +826,9 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
   let localOutputError: Error | undefined
   try {
-    const outDirStats = fs.statSync(outDir)
-    if (!outDirStats.isDirectory()) {
-      localOutputError = new Error(`FTP outDir is not a directory: ${outDir}`)
-    } else if (getAllFiles(outDir).length === 0) {
-      localOutputError = new Error(`FTP outDir contains no files to upload: ${outDir}`)
-    }
+    getFtpUploadFiles(outDir)
   } catch (error) {
-    localOutputError = new Error(`FTP outDir does not exist or cannot be read: ${outDir}`, { cause: error })
+    localOutputError = error instanceof Error ? error : new Error(String(error))
   }
 
   if (localOutputError) {
@@ -1045,233 +868,5 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     outDir,
     totalFiles,
     failedCount,
-  }
-}
-
-async function downloadRemoteFilesForBackup(
-  client: Client,
-  remoteDir: string,
-  localDir: string,
-  downloadedFiles: Array<{ remotePath: string; size: number }> = [],
-) {
-  if (!fs.existsSync(localDir)) {
-    fs.mkdirSync(localDir, { recursive: true })
-  }
-
-  const remoteEntries = await client.list(remoteDir)
-
-  for (const entry of remoteEntries) {
-    const remotePath = normalizeRemotePath(remoteDir, entry.name)
-    const localPath = path.join(localDir, entry.name)
-
-    if (entry.type === FileType.Directory) {
-      await downloadRemoteFilesForBackup(client, remotePath, localPath, downloadedFiles)
-      continue
-    }
-
-    if (entry.type === FileType.SymbolicLink) {
-      continue
-    }
-
-    if (backupArchivePattern.test(entry.name)) {
-      continue
-    }
-
-    if (entry.type === FileType.File) {
-      await client.downloadTo(localPath, remotePath)
-      downloadedFiles.push({ remotePath, size: entry.size })
-      continue
-    }
-
-    try {
-      await client.downloadTo(localPath, remotePath)
-      downloadedFiles.push({ remotePath, size: entry.size })
-    } catch (downloadError) {
-      try {
-        await downloadRemoteFilesForBackup(client, remotePath, localPath, downloadedFiles)
-      } catch {
-        throw downloadError
-      }
-    }
-  }
-
-  return downloadedFiles
-}
-
-async function createBackupFile(
-  client: Client,
-  dir: string,
-  alias: string,
-  showBackFile: boolean = false,
-  useSpinner: boolean = true,
-): Promise<BackupSummary | null> {
-  const targetUrl = resolveDisplayUrl(alias, dir)
-  const backupSpinner = useSpinner ? ora(`创建备份文件中 ${chalk.yellow(`==> ${targetUrl}`)}`).start() : null
-
-  const fileName = `backup_${dayjs().format('YYYYMMDD_HHmmss')}.zip`
-  const tempDir = createTempDir('backup-download')
-  const zipTempDir = createTempDir('backup-zip')
-  const zipFilePath = path.join(zipTempDir.path, fileName)
-
-  try {
-    if (backupSpinner) {
-      backupSpinner.text = `下载远程文件中 ${chalk.yellow(`==> ${targetUrl}`)}`
-    }
-
-    const downloadedFiles = await downloadRemoteFilesForBackup(client, dir, tempDir.path)
-
-    if (downloadedFiles.length === 0) {
-      if (backupSpinner) {
-        backupSpinner.warn('未找到可备份的远程文件')
-      }
-      return null
-    }
-
-    if (showBackFile) {
-      console.log(chalk.cyan(`\n开始备份远程文件，共 ${downloadedFiles.length} 个文件:`))
-      downloadedFiles.forEach((file) => {
-        console.log(chalk.gray(`  - ${file.remotePath} (${file.size} bytes)`))
-      })
-    }
-
-    if (backupSpinner) {
-      backupSpinner.text = `下载远程文件成功 ${chalk.yellow(`==> ${targetUrl}`)}`
-    }
-
-    await createZipFile(tempDir.path, zipFilePath)
-
-    const backupRemotePath = normalizeRemotePath(dir, fileName)
-    if (backupSpinner) {
-      backupSpinner.text = `压缩完成, 准备上传 ${chalk.yellow(`==> ${resolveDisplayUrl(alias, backupRemotePath)}`)}`
-    }
-
-    await client.uploadFrom(zipFilePath, backupRemotePath)
-
-    const backupUrl = resolveDisplayUrl(alias, backupRemotePath)
-
-    backupSpinner?.stop()
-    return {
-      title: '备份完成',
-      items: [backupUrl],
-    }
-  } catch (error) {
-    if (backupSpinner) {
-      backupSpinner.fail('备份失败')
-    }
-    throw error
-  } finally {
-    tempDir.cleanup()
-    zipTempDir.cleanup()
-    try {
-      if (fs.existsSync(zipFilePath)) {
-        fs.rmSync(zipFilePath)
-      }
-    } catch (error) {
-      console.warn(chalk.yellow('⚠ 清理zip文件失败'), error)
-    }
-  }
-}
-
-async function createSingleBackup(
-  client: Client,
-  dir: string,
-  alias: string,
-  singleBackFiles: string[],
-  showBackFile: boolean = false,
-  useSpinner: boolean = true,
-): Promise<BackupSummary | null> {
-  const timestamp = dayjs().format('YYYYMMDD_HHmmss')
-  const backupSpinner =
-    useSpinner ? ora(`备份指定文件中 ${chalk.yellow(`==> ${resolveDisplayUrl(alias, dir)}`)}`).start() : null
-
-  const tempDir = createTempDir('single-backup')
-  let backupProgressSpinner: ReturnType<typeof ora> | undefined
-
-  try {
-    const normalizedSingleBackFiles = singleBackFiles
-      .map((fileName) => normalizeSelectionPath(fileName))
-      .map((fileName) =>
-        fileName
-          .split('/')
-          .filter((segment) => segment && segment !== '.')
-          .join('/'),
-      )
-      .filter((fileName) => !fileName.split('/').includes('..'))
-      .filter(Boolean)
-
-    const backupTasks = normalizedSingleBackFiles.map((fileName) => ({ fileName }))
-
-    if (backupTasks.length === 0) {
-      if (backupSpinner) {
-        backupSpinner.warn('未找到需要备份的文件')
-      }
-      return null
-    }
-
-    backupSpinner?.stop()
-
-    if (showBackFile) {
-      console.log(chalk.cyan(`\n开始单文件备份，共 ${backupTasks.length} 个文件:`))
-      backupTasks.forEach((task) => {
-        console.log(chalk.gray(`  - ${task.fileName}`))
-      })
-    }
-
-    if (useSpinner) {
-      backupProgressSpinner = ora('正在备份文件...').start()
-    }
-
-    let backedUpCount = 0
-    const backedUpFiles: string[] = []
-
-    for (const { fileName } of backupTasks) {
-      try {
-        const localTempPath = path.join(tempDir.path, fileName)
-        const localTempDir = path.dirname(localTempPath)
-        if (!fs.existsSync(localTempDir)) {
-          fs.mkdirSync(localTempDir, { recursive: true })
-        }
-
-        const fileDir = path.posix.dirname(fileName)
-        const fileBaseName = path.posix.basename(fileName)
-        const extIndex = fileBaseName.lastIndexOf('.')
-        const name = extIndex > -1 ? fileBaseName.slice(0, extIndex) : fileBaseName
-        const ext = extIndex > -1 ? fileBaseName.slice(extIndex) : ''
-        const backupFileName = `${name}.${timestamp}${ext}`
-        const backupRelativePath = fileDir === '.' ? backupFileName : normalizeRemotePath(fileDir, backupFileName)
-        const sourceRemotePath = normalizeRemotePath(dir, fileName)
-        const backupRemotePath = normalizeRemotePath(dir, backupRelativePath)
-
-        await client.downloadTo(localTempPath, sourceRemotePath)
-        await client.uploadFrom(localTempPath, backupRemotePath)
-
-        backedUpFiles.push(resolveDisplayUrl(alias, backupRemotePath))
-        backedUpCount++
-      } catch (error) {
-        console.warn(chalk.yellow(`备份文件 ${fileName} 失败:`), error instanceof Error ? error.message : error)
-      }
-    }
-
-    if (backedUpCount > 0) {
-      backupProgressSpinner?.stop()
-      return {
-        title: '备份完成',
-        items: backedUpFiles,
-      }
-    } else {
-      if (backupProgressSpinner) {
-        backupProgressSpinner.fail('所有文件备份失败')
-      }
-      return null
-    }
-  } catch (error) {
-    if (backupProgressSpinner) {
-      backupProgressSpinner.fail('备份过程中发生错误')
-    } else if (backupSpinner) {
-      backupSpinner.fail('备份过程中发生错误')
-    }
-    throw error
-  } finally {
-    tempDir.cleanup()
   }
 }

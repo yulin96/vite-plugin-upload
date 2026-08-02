@@ -1,11 +1,13 @@
 import oss from 'ali-oss'
 import chalk from 'chalk'
 import cliProgress from 'cli-progress'
-import { globSync } from 'glob'
-import { mkdir, stat, unlink, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path'
-import type { DeployOssOption, DeployOssResult, ManifestPayload, UploadResult, UploadTask } from './types'
-import { getFileMd5, removeEmptyDirectories } from './utils/file'
+import { stat, unlink } from 'node:fs/promises'
+import { isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path'
+import { printUploadedFiles, renderDebugPanel, type DebugTimingEntry } from '../shared/deploy-output'
+import { collectOssUploadFiles } from './files'
+import { deployOssManifest } from './manifest'
+import type { DeployOssOption, DeployOssResult, UploadResult, UploadTask } from './types'
+import { removeEmptyDirectories } from './utils/file'
 import {
   ensureTrailingSlash,
   normalizeObjectKey,
@@ -13,79 +15,13 @@ import {
   normalizeSlash,
   normalizeUrlLikeBase,
   resolveManifestFileName,
-  resolveUploadedFileUrl,
 } from './utils/path'
 import { formatBytes, formatDuration } from './utils/progress'
 import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel } from './utils/terminal'
 
-interface DebugTimingEntry {
-  label: string
-  durationMs: number
-  detail?: string
-}
-
 interface UploadBatchExecution {
   results: UploadResult[]
   debugEntries: DebugTimingEntry[]
-}
-
-const formatTimingDuration = (durationMs: number): string => {
-  if (durationMs < 1000) return `${durationMs}ms`
-  const seconds = durationMs / 1000
-  return `${seconds.toFixed(seconds >= 10 ? 1 : 2)}s`
-}
-
-const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
-  const rows = entries.map((entry) => ({
-    label: `${entry.label}:`,
-    value: chalk.cyan(
-      entry.detail ?
-        `${formatTimingDuration(entry.durationMs)} · ${entry.detail}`
-      : formatTimingDuration(entry.durationMs),
-    ),
-  }))
-
-  return renderPanel(`${getPanelDot('success')} 调试耗时`, rows, 'info')
-}
-
-const printUploadedFiles = (results: UploadResult[]) => {
-  const uploadedFiles = results.filter((result) => result.success)
-  if (uploadedFiles.length === 0) return
-
-  console.log(`${getPanelDot('success')} ${chalk.green.bold('上传成功文件')}`)
-  uploadedFiles.forEach((result) => {
-    console.log(
-      `  ${chalk.green('•')} ${chalk.cyan(result.relativeFilePath)} ${chalk.gray(`· ${formatBytes(result.size)}`)} ${chalk.gray('->')} ${chalk.yellow(result.name)}`,
-    )
-  })
-  console.log()
-}
-
-const createManifestPayload = async (
-  results: UploadResult[],
-  configBase?: string,
-  alias?: string,
-  run?: string | string[],
-): Promise<ManifestPayload> => {
-  const successfulResults = results.filter((result) => result.success)
-
-  const files = await Promise.all(
-    successfulResults.map(async (result) => {
-      const md5 = await getFileMd5(result.file)
-      return {
-        file: result.relativeFilePath,
-        key: result.name,
-        url: resolveUploadedFileUrl(result.relativeFilePath, result.name, configBase, alias),
-        md5,
-      }
-    }),
-  )
-
-  return {
-    version: Date.now(),
-    ...(run === undefined ? {} : { run }),
-    files,
-  }
 }
 
 const validateOptions = (
@@ -474,38 +410,18 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     }
   }
 
-  let outDirStats
-  try {
-    outDirStats = await stat(resolvedOutDir)
-  } catch (error) {
-    return localOutputFailure(new Error(`OSS outDir does not exist or cannot be read: ${resolvedOutDir}`, { cause: error }))
-  }
-  if (!outDirStats.isDirectory()) {
-    return localOutputFailure(new Error(`OSS outDir is not a directory: ${resolvedOutDir}`))
-  }
-
   const collectFilesStartedAt = Date.now()
   let files: string[]
   try {
-    files = globSync('**/*', {
-      cwd: resolvedOutDir,
-      nodir: true,
-      ignore: effectiveSkip,
-    })
-      .map((file) => normalizeSlash(file))
-      .filter((file) => file !== manifestFileName)
+    files = await collectOssUploadFiles(resolvedOutDir, effectiveSkip, manifestFileName)
   } catch (error) {
-    return localOutputFailure(new Error(`Failed to scan OSS outDir: ${resolvedOutDir}`, { cause: error }))
+    return localOutputFailure(error instanceof Error ? error : new Error(String(error)))
   }
   debugEntries.push({
     label: '扫描本地文件',
     durationMs: Date.now() - collectFilesStartedAt,
     detail: `${files.length} 个文件`,
   })
-
-  if (files.length === 0) {
-    return localOutputFailure(new Error(`OSS outDir contains no files to upload: ${resolvedOutDir}`))
-  }
 
   const client = new oss({ region, accessKeyId, accessKeySecret, secure, bucket, ...props })
 
@@ -556,55 +472,25 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     }
 
     if (manifestFileName && uploadedFileFailedCount === 0) {
-      const manifestRelativeFilePath = manifestFileName
-      const manifestFilePath = resolveOutDirFile(manifestRelativeFilePath)
-      const manifestObjectKey = normalizeObjectKey(normalizedUploadDir, manifestRelativeFilePath)
-
-      const manifestStartedAt = Date.now()
-      await mkdir(dirname(manifestFilePath), { recursive: true })
-      await writeFile(
-        manifestFilePath,
-        JSON.stringify(await createManifestPayload(results, normalizedConfigBase, normalizedAlias, manifestRun), null, 2),
-        'utf8',
-      )
-      if (debug) {
-        debugEntries.push({
-          label: '生成清单文件',
-          durationMs: Date.now() - manifestStartedAt,
-          detail: manifestRelativeFilePath,
-        })
-      }
-
-      const manifestStats = await stat(manifestFilePath)
-      const manifestUploadStartedAt = Date.now()
-      const manifestResult = await uploadSingleTask(client, {
-        filePath: manifestFilePath,
-        relativeFilePath: manifestRelativeFilePath,
-        name: manifestObjectKey,
-        size: manifestStats.size,
-        cacheControl: 'no-cache, no-store, must-revalidate',
+      const manifestDeployment = await deployOssManifest({
+        results,
+        fileName: manifestFileName,
+        run: manifestRun,
+        uploadDir: normalizedUploadDir,
+        configBase: normalizedConfigBase,
+        alias: normalizedAlias,
+        debug,
+        resolveOutDirFile,
+        upload: (task) => uploadSingleTask(client, task),
       })
-
-      finalResults = [...results, manifestResult]
+      finalResults = [...results, manifestDeployment.result]
       completedResults = finalResults
-      if (!manifestResult.success) {
-        throw manifestResult.error || new Error(`Failed to upload manifest: ${manifestRelativeFilePath}`)
+      if (debug) debugEntries.push(...manifestDeployment.debugEntries)
+      if (!manifestDeployment.result.success) {
+        throw manifestDeployment.result.error || new Error(`Failed to upload manifest: ${manifestFileName}`)
       }
-      if (debug) {
-        debugEntries.push({
-          label: '上传清单文件',
-          durationMs: Date.now() - manifestUploadStartedAt,
-          detail: manifestRelativeFilePath,
-        })
-      }
-
-      manifestUrl = resolveUploadedFileUrl(
-        manifestRelativeFilePath,
-        manifestObjectKey,
-        normalizedConfigBase,
-        normalizedAlias,
-      )
-      manifestSummary = manifestUrl || manifestObjectKey
+      manifestUrl = manifestDeployment.url
+      manifestSummary = manifestDeployment.url
     } else if (manifestFileName && uploadedFileFailedCount > 0) {
       console.warn(`${getLogSymbol('warning')} 有文件上传失败，已跳过清单文件`)
     }

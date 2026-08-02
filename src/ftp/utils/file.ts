@@ -22,6 +22,25 @@ export function getAllFiles(dirPath: string, arrayOfFiles: string[] = [], relati
   return arrayOfFiles
 }
 
+export function getFtpUploadFiles(outDir: string): string[] {
+  let outDirStats: fs.Stats
+  try {
+    outDirStats = fs.statSync(outDir)
+  } catch (error) {
+    throw new Error(`FTP outDir does not exist or cannot be read: ${outDir}`, { cause: error })
+  }
+  if (!outDirStats.isDirectory()) throw new Error(`FTP outDir is not a directory: ${outDir}`)
+
+  let files: string[]
+  try {
+    files = getAllFiles(outDir)
+  } catch (error) {
+    throw new Error(`Failed to scan FTP outDir: ${outDir}`, { cause: error })
+  }
+  if (files.length === 0) throw new Error(`FTP outDir contains no files to upload: ${outDir}`)
+  return files
+}
+
 export function createTempDir(basePath: string): TempDir {
   const tempBaseDir = os.tmpdir()
   const tempParentDir = path.join(tempBaseDir, 'vite-plugin-deploy-ftp')

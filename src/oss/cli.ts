@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-import { access, readFile } from 'node:fs/promises'
-import { extname, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { loadDeployConfig, readCliValue } from '../shared/cli'
 import { deployOss } from './deploy'
 import type { DeployOssOption } from './types'
 
@@ -39,14 +37,6 @@ Options:
   -h, --help               Show help
 `.trim()
 
-const readValue = (args: string[], index: number, name: string): string => {
-  const value = args[index + 1]
-  if (!value || value.startsWith('-')) {
-    throw new Error(`${name} requires a value`)
-  }
-  return value
-}
-
 const parseArgs = (args: string[]): { configPath?: string; option: Partial<DeployOssOption>; help: boolean } => {
   const option: Partial<DeployOssOption> = {}
   let configPath: string | undefined
@@ -61,7 +51,7 @@ const parseArgs = (args: string[]): { configPath?: string; option: Partial<Deplo
         help = true
         break
       case '--config':
-        configPath = readValue(args, i, arg)
+        configPath = readCliValue(args, i, arg)
         i++
         break
       case '--outDir':
@@ -73,12 +63,12 @@ const parseArgs = (args: string[]): { configPath?: string; option: Partial<Deplo
       case '--configBase':
       case '--alias': {
         const key = arg.slice(2) as keyof DeployOssOption
-        option[key] = readValue(args, i, arg) as never
+        option[key] = readCliValue(args, i, arg) as never
         i++
         break
       }
       case '--skip': {
-        const value = readValue(args, i, arg)
+        const value = readCliValue(args, i, arg)
         option.skip = Array.isArray(option.skip) ? [...option.skip, value] : option.skip ? [option.skip, value] : value
         i++
         break
@@ -112,7 +102,7 @@ const parseArgs = (args: string[]): { configPath?: string; option: Partial<Deplo
       case '--retryTimes':
       case '--multipartThreshold': {
         const key = arg.slice(2) as 'concurrency' | 'retryTimes' | 'multipartThreshold'
-        option[key] = Number(readValue(args, i, arg))
+        option[key] = Number(readCliValue(args, i, arg))
         i++
         break
       }
@@ -124,31 +114,6 @@ const parseArgs = (args: string[]): { configPath?: string; option: Partial<Deplo
   return { configPath, option, help }
 }
 
-const findDefaultConfig = async (): Promise<string | undefined> => {
-  for (const file of DEFAULT_CONFIG_FILES) {
-    const filePath = resolve(file)
-    try {
-      await access(filePath)
-      return filePath
-    } catch {}
-  }
-}
-
-const loadConfig = async (configPath?: string): Promise<Partial<DeployOssOption>> => {
-  const resolvedConfigPath = configPath ? resolve(configPath) : await findDefaultConfig()
-  if (!resolvedConfigPath) return {}
-
-  if (extname(resolvedConfigPath) === '.json') {
-    return JSON.parse(await readFile(resolvedConfigPath, 'utf8')) as Partial<DeployOssOption>
-  }
-
-  const mod = (await import(pathToFileURL(resolvedConfigPath).href)) as {
-    default?: Partial<DeployOssOption>
-    deployOss?: Partial<DeployOssOption>
-  }
-  return mod.default || mod.deployOss || {}
-}
-
 const main = async () => {
   const { configPath, option, help } = parseArgs(process.argv.slice(2))
 
@@ -157,7 +122,7 @@ const main = async () => {
     return
   }
 
-  const config = await loadConfig(configPath)
+  const config = await loadDeployConfig<DeployOssOption>(configPath, DEFAULT_CONFIG_FILES, 'deployOss')
   await deployOss({
     ...config,
     ...option,
