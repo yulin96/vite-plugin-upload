@@ -667,22 +667,30 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       return { name: name || host || 'unknown', totalFiles: 0, failedCount: 1 }
     }
 
+    const displayName = name || host
+    const resultName = normalizedUploadPaths.length > 1 ? `${displayName} ${normalizedUploadPath}` : displayName
+    const startTime = Date.now()
     const debugEntries: DebugTimingEntry[] = []
     const collectFilesStartedAt = Date.now()
-    const allFiles = getAllFiles(outDir)
+    let allFiles: string[]
+    try {
+      allFiles = getAllFiles(outDir)
+    } catch (error) {
+      const scanError = new Error(`Failed to scan FTP outDir: ${outDir}`, { cause: error })
+      console.log(`${getLogSymbol('danger')} ${scanError.message}`)
+      return { name: resultName, totalFiles: 0, failedCount: 1, error: scanError }
+    }
     debugEntries.push({
       label: '扫描本地文件',
       durationMs: Date.now() - collectFilesStartedAt,
       detail: `${allFiles.length} 个文件`,
     })
     const totalFiles = allFiles.length
-    const displayName = name || host
-    const resultName = normalizedUploadPaths.length > 1 ? `${displayName} ${normalizedUploadPath}` : displayName
-    const startTime = Date.now()
 
     if (allFiles.length === 0) {
-      console.log(`${getLogSymbol('warning')} 没有找到需要上传的文件`)
-      return { name: resultName, totalFiles: 0, failedCount: 0 }
+      const emptyOutputError = new Error(`FTP outDir contains no files to upload: ${outDir}`)
+      console.log(`${getLogSymbol('danger')} ${emptyOutputError.message}`)
+      return { name: resultName, totalFiles: 0, failedCount: 1, error: emptyOutputError }
     }
 
     clearScreen()
@@ -986,6 +994,38 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
   const validationErrors = validateOptions()
   if (validationErrors.length > 0) {
     throw new Error(`配置错误:\n${validationErrors.map((err) => `  - ${err}`).join('\n')}`)
+  }
+
+  let localOutputError: Error | undefined
+  try {
+    const outDirStats = fs.statSync(outDir)
+    if (!outDirStats.isDirectory()) {
+      localOutputError = new Error(`FTP outDir is not a directory: ${outDir}`)
+    } else if (getAllFiles(outDir).length === 0) {
+      localOutputError = new Error(`FTP outDir contains no files to upload: ${outDir}`)
+    }
+  } catch (error) {
+    localOutputError = new Error(`FTP outDir does not exist or cannot be read: ${outDir}`, { cause: error })
+  }
+
+  if (localOutputError) {
+    console.log(`${getLogSymbol('danger')} ${localOutputError.message}`)
+    if (failOnError) throw localOutputError
+
+    return {
+      success: false,
+      targets: [
+        {
+          name: 'local output',
+          totalFiles: 0,
+          failedCount: 1,
+          error: localOutputError,
+        },
+      ],
+      outDir,
+      totalFiles: 0,
+      failedCount: 1,
+    }
   }
 
   const deployResults = await deployToFtp()

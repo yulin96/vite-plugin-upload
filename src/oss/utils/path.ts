@@ -62,8 +62,20 @@ export const normalizeObjectKey = (targetDir: string, relativeFilePath: string):
   normalizePathSegments(targetDir, relativeFilePath)
 
 export const normalizeManifestFileName = (fileName?: string): string => {
-  const normalized = normalizePathSegments(fileName || DEFAULT_MANIFEST_FILE_NAME)
-  return normalized || DEFAULT_MANIFEST_FILE_NAME
+  const value = normalizeSlash(fileName === undefined ? DEFAULT_MANIFEST_FILE_NAME : fileName)
+  const segments = value.split('/')
+  const isAbsolutePath = value.startsWith('/') || value.startsWith('//') || /^[a-zA-Z]:\//.test(value)
+
+  if (isAbsolutePath || segments.some((segment) => segment === '.' || segment === '..')) {
+    throw new Error('manifest.fileName must be a relative path inside outDir without "." or ".." segments')
+  }
+
+  const normalized = segments.filter(Boolean).join('/')
+  if (!normalized) {
+    throw new Error('manifest.fileName must not be empty')
+  }
+
+  return normalized
 }
 
 export const resolveManifestFileName = (manifest: ManifestConfig): string | null => {
@@ -72,7 +84,11 @@ export const resolveManifestFileName = (manifest: ManifestConfig): string | null
   return normalizeManifestFileName(manifest.fileName)
 }
 
-export const encodeUrlPath = (path: string): string => encodeURI(normalizePathSegments(path))
+export const encodeUrlPath = (path: string): string =>
+  normalizePathSegments(path)
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
 
 export const joinUrlPath = (base: string, path: string): string =>
   `${normalizeUrlLikeBase(base).replace(/\/+$/, '')}/${encodeUrlPath(path)}`

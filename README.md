@@ -188,7 +188,7 @@ deploy-oss --config deploy-oss.config.mjs
 | `skip`            | `'**/index.html'` | Files to skip.                                                            |
 | `overwrite`       | `true`            | Whether to overwrite existing OSS files.                                  |
 | `autoDelete`      | `false`           | Delete local files after successful upload.                               |
-| `manifest`        | `false`           | Generate and upload `oss-manifest.json`.                                  |
+| `manifest`        | `false`           | Generate and upload a manifest inside `outDir`.                            |
 | `failOnError`     | `true`            | Fail the build when upload fails.                                         |
 | `debug`           | `false`           | Print debug timing.                                                       |
 | `fancy`           | `true`            | Show styled terminal output.                                              |
@@ -198,9 +198,12 @@ deploy-oss --config deploy-oss.config.mjs
 
 - Uploads run after Vite finishes building.
 - When `open: false`, upload logic and required-option validation are skipped.
+- An enabled deployment fails when `outDir` is missing, unreadable, not a directory, or contains no files to upload.
 - FTP supports multiple upload paths and multiple FTP server configs.
 - FTP can back up remote files before uploading.
 - OSS `manifest: true` keeps local files and ignores the default `skip`.
+- OSS manifest file names must be relative paths inside `outDir` and cannot contain `.` or `..` path segments.
+- `deployOss()` results and upload statistics include the manifest upload when a manifest is enabled.
 - OSS `manifest: { run: './index.html' }` writes a runnable entry to the manifest. `run` supports `string` or `string[]`.
 - OSS `configBase` changes Vite output paths and manifest URLs.
 - The package only supports ESM import syntax.

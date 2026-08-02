@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import cliProgress from 'cli-progress'
 import { globSync } from 'glob'
 import { mkdir, stat, unlink, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path'
 import type { DeployOssOption, DeployOssResult, ManifestPayload, UploadResult, UploadTask } from './types'
 import { getFileMd5, removeEmptyDirectories } from './utils/file'
 import {
@@ -106,6 +106,11 @@ const validateOptions = (
   if (!Number.isFinite(runtimeOption.multipartThreshold) || runtimeOption.multipartThreshold <= 0) {
     errors.push('multipartThreshold must be > 0')
   }
+  try {
+    resolveManifestFileName(option.manifest)
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error))
+  }
   return errors
 }
 
@@ -168,6 +173,21 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     : Array.isArray(skip) ? skip
     : [skip]
   const resolvedOutDir = normalizeSlash(resolve(outDir))
+  const resolveOutDirFile = (relativeFilePath: string): string => {
+    const resolvedFilePath = resolve(resolvedOutDir, relativeFilePath)
+    const relativeToOutDir = relative(resolvedOutDir, resolvedFilePath)
+
+    if (
+      !relativeToOutDir ||
+      relativeToOutDir === '..' ||
+      relativeToOutDir.startsWith(`..${pathSeparator}`) ||
+      isAbsolute(relativeToOutDir)
+    ) {
+      throw new Error(`Path must resolve inside outDir: ${relativeFilePath}`)
+    }
+
+    return normalizeSlash(resolvedFilePath)
+  }
   const useInteractiveOutput =
     fancy && Boolean(process.stdout?.isTTY) && Boolean(process.stderr?.isTTY) && !process.env.CI
 
@@ -281,7 +301,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     const taskPrepareStartedAt = Date.now()
     const taskCandidates = await Promise.all(
       files.map(async (relativeFilePath) => {
-        const filePath = normalizeSlash(resolve(resolvedOutDir, relativeFilePath))
+        const filePath = resolveOutDirFile(relativeFilePath)
         const name = normalizeObjectKey(normalizedUploadDir, relativeFilePath)
 
         try {
@@ -439,27 +459,13 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
   const startTime = Date.now()
   const debugEntries: DebugTimingEntry[] = []
-  const client = new oss({ region, accessKeyId, accessKeySecret, secure, bucket, ...props })
-
-  const collectFilesStartedAt = Date.now()
-  const files = globSync('**/*', {
-    cwd: resolvedOutDir,
-    nodir: true,
-    ignore: effectiveSkip,
-  })
-    .map((file) => normalizeSlash(file))
-    .filter((file) => file !== manifestFileName)
-  debugEntries.push({
-    label: '扫描本地文件',
-    durationMs: Date.now() - collectFilesStartedAt,
-    detail: `${files.length} 个文件`,
-  })
-
-  if (files.length === 0) {
-    console.log(`${getLogSymbol('warning')} 没有找到需要上传的文件`)
+  const localOutputFailure = (error: Error): DeployOssResult => {
+    console.log(`${getLogSymbol('danger')} ${error.message}`)
     if (!showUploadedFiles) console.log()
+    if (failOnError) throw error
+
     return {
-      success: true,
+      success: false,
       results: [],
       outDir: resolvedOutDir,
       durationSeconds: (Date.now() - startTime) / 1000,
@@ -467,6 +473,41 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       retryCount: 0,
     }
   }
+
+  let outDirStats
+  try {
+    outDirStats = await stat(resolvedOutDir)
+  } catch (error) {
+    return localOutputFailure(new Error(`OSS outDir does not exist or cannot be read: ${resolvedOutDir}`, { cause: error }))
+  }
+  if (!outDirStats.isDirectory()) {
+    return localOutputFailure(new Error(`OSS outDir is not a directory: ${resolvedOutDir}`))
+  }
+
+  const collectFilesStartedAt = Date.now()
+  let files: string[]
+  try {
+    files = globSync('**/*', {
+      cwd: resolvedOutDir,
+      nodir: true,
+      ignore: effectiveSkip,
+    })
+      .map((file) => normalizeSlash(file))
+      .filter((file) => file !== manifestFileName)
+  } catch (error) {
+    return localOutputFailure(new Error(`Failed to scan OSS outDir: ${resolvedOutDir}`, { cause: error }))
+  }
+  debugEntries.push({
+    label: '扫描本地文件',
+    durationMs: Date.now() - collectFilesStartedAt,
+    detail: `${files.length} 个文件`,
+  })
+
+  if (files.length === 0) {
+    return localOutputFailure(new Error(`OSS outDir contains no files to upload: ${resolvedOutDir}`))
+  }
+
+  const client = new oss({ region, accessKeyId, accessKeySecret, secure, bucket, ...props })
 
   clearViewport()
   console.log()
@@ -502,26 +543,21 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       debugEntries.push(...uploadDebugEntries)
     }
 
-    const successCount = results.filter((r) => r.success).length
-    const failedCount = results.length - successCount
-    const durationSeconds = (Date.now() - startTime) / 1000
-    const uploadedBytes = results.reduce((sum, result) => (result.success ? sum + result.size : sum), 0)
-    const retryCount = results.reduce((sum, result) => sum + result.retries, 0)
-    const avgSpeed = durationSeconds > 0 ? uploadedBytes / durationSeconds : 0
+    const uploadedFileFailedCount = results.filter((result) => !result.success).length
     let manifestSummary: string | null = null
     let manifestUrl: string | undefined
-    let uploadedFileResults = results
+    let finalResults = results
 
-    if (failedCount > 0 && failOnError) {
+    if (uploadedFileFailedCount > 0 && failOnError) {
       if (showUploadedFiles) {
         printUploadedFiles(results)
       }
-      throw new Error(`Failed to upload ${failedCount} of ${results.length} files`)
+      throw new Error(`Failed to upload ${uploadedFileFailedCount} of ${results.length} files`)
     }
 
-    if (manifestFileName && failedCount === 0) {
+    if (manifestFileName && uploadedFileFailedCount === 0) {
       const manifestRelativeFilePath = manifestFileName
-      const manifestFilePath = normalizeSlash(resolve(resolvedOutDir, manifestRelativeFilePath))
+      const manifestFilePath = resolveOutDirFile(manifestRelativeFilePath)
       const manifestObjectKey = normalizeObjectKey(normalizedUploadDir, manifestRelativeFilePath)
 
       const manifestStartedAt = Date.now()
@@ -549,11 +585,11 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         cacheControl: 'no-cache, no-store, must-revalidate',
       })
 
+      finalResults = [...results, manifestResult]
+      completedResults = finalResults
       if (!manifestResult.success) {
-        completedResults = [...results, manifestResult]
         throw manifestResult.error || new Error(`Failed to upload manifest: ${manifestRelativeFilePath}`)
       }
-      uploadedFileResults = [...results, manifestResult]
       if (debug) {
         debugEntries.push({
           label: '上传清单文件',
@@ -569,9 +605,16 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         normalizedAlias,
       )
       manifestSummary = manifestUrl || manifestObjectKey
-    } else if (manifestFileName && failedCount > 0) {
+    } else if (manifestFileName && uploadedFileFailedCount > 0) {
       console.warn(`${getLogSymbol('warning')} 有文件上传失败，已跳过清单文件`)
     }
+
+    const successCount = finalResults.filter((result) => result.success).length
+    const failedCount = finalResults.length - successCount
+    const durationSeconds = (Date.now() - startTime) / 1000
+    const uploadedBytes = finalResults.reduce((sum, result) => (result.success ? sum + result.size : sum), 0)
+    const retryCount = finalResults.reduce((sum, result) => sum + result.retries, 0)
+    const avgSpeed = durationSeconds > 0 ? uploadedBytes / durationSeconds : 0
 
     if (effectiveAutoDelete) {
       try {
@@ -593,7 +636,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         label: '结果:',
         value:
           failedCount === 0 ?
-            chalk.green(`${successCount}/${results.length} 全部成功`)
+            chalk.green(`${successCount}/${finalResults.length} 全部成功`)
           : chalk.yellow(`成功 ${successCount} 个，失败 ${failedCount} 个`),
       },
       {
@@ -609,7 +652,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     ]
 
     if (failedCount > 0) {
-      const failedItems = results.filter((result) => !result.success).slice(0, 2)
+      const failedItems = finalResults.filter((result) => !result.success).slice(0, 2)
       resultRows.push(
         ...failedItems.map((item, index) => ({
           label: `失败 ${index + 1}`,
@@ -634,7 +677,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     )
 
     if (showUploadedFiles) {
-      printUploadedFiles(uploadedFileResults)
+      printUploadedFiles(finalResults)
     }
 
     if (debug) {
@@ -648,7 +691,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     if (!showUploadedFiles) console.log()
     return {
       success: failedCount === 0,
-      results,
+      results: finalResults,
       outDir: resolvedOutDir,
       durationSeconds,
       uploadedBytes,
