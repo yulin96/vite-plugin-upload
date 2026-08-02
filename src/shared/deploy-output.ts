@@ -6,6 +6,7 @@ export interface DebugTimingEntry {
   label: string
   durationMs: number
   detail?: string
+  group?: string
 }
 
 export interface UploadDisplayResult {
@@ -22,13 +23,23 @@ const formatTimingDuration = (durationMs: number): string => {
 }
 
 export const renderDebugPanel = (entries: DebugTimingEntry[]): string => {
-  const rows = entries.map((entry) => ({
+  const compactEntries: DebugTimingEntry[] = []
+  for (const entry of entries) {
+    const previousEntry = compactEntries.at(-1)
+    if (entry.group && previousEntry?.group === entry.group) {
+      previousEntry.durationMs += entry.durationMs
+      continue
+    }
+    compactEntries.push({ ...entry, label: entry.group || entry.label })
+  }
+
+  const rows = compactEntries.map((entry) => ({
     label: `${entry.label}:`,
     value: chalk.cyan(
       entry.detail ? `${formatTimingDuration(entry.durationMs)} · ${entry.detail}` : formatTimingDuration(entry.durationMs),
     ),
   }))
-  return renderPanel(`${getPanelDot('success')} 调试耗时`, rows, 'info')
+  return renderPanel(`${getPanelDot('muted')} 调试耗时`, rows, 'muted')
 }
 
 export const printUploadedFiles = (results: UploadDisplayResult[]) => {

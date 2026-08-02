@@ -59,6 +59,7 @@ export const deployOssManifest = async (option: DeployManifestOption): Promise<D
       label: '生成清单文件',
       durationMs: Date.now() - generateStartedAt,
       detail: option.fileName,
+      group: '清单处理',
     })
   }
 
@@ -76,6 +77,7 @@ export const deployOssManifest = async (option: DeployManifestOption): Promise<D
       label: '上传清单文件',
       durationMs: Date.now() - uploadStartedAt,
       detail: option.fileName,
+      group: '清单处理',
     })
   }
 

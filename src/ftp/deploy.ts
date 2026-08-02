@@ -1,11 +1,11 @@
 import { checkbox, select } from '@inquirer/prompts'
 import { Client } from 'basic-ftp'
 import chalk from 'chalk'
-import cliProgress from 'cli-progress'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import ora from 'ora'
 import { printUploadedFiles, renderDebugPanel, type DebugTimingEntry } from '../shared/deploy-output'
+import { TerminalReporter } from '../shared/terminal-reporter'
+import { createBackupFile, createSingleBackup, renderBackupPanel } from './backup'
 import type {
   BackupSummary,
   DeployFtpOption,
@@ -16,7 +16,6 @@ import type {
   UploadResult,
   UploadTask,
 } from './types'
-import { createBackupFile, createSingleBackup, renderBackupPanel } from './backup'
 import { getFtpUploadFiles } from './utils/file'
 import { connectWithRetry, sleep, validateFtpConfig } from './utils/ftp'
 import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel, type TerminalRow } from './utils/output'
@@ -79,13 +78,8 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
   const outDir = normalizeSlash(path.resolve(optionOutDir))
 
-  const useInteractiveOutput =
-    fancy && Boolean(process.stdout?.isTTY) && Boolean(process.stderr?.isTTY) && !process.env.CI
-
-  const clearScreen = () => {
-    if (!useInteractiveOutput) return
-    process.stdout.write('\x1b[2J\x1b[0f')
-  }
+  const reporter = new TerminalReporter({ fancy })
+  const useInteractiveOutput = reporter.interactive
 
   if (!open) {
     return {
@@ -270,6 +264,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       label: '生成上传任务',
       durationMs: Date.now() - taskPrepareStartedAt,
       detail: `${tasks.length} 个文件`,
+      group: '前置操作',
     })
 
     const normalizedTargetDir = normalizeFtpUploadPath(targetDir)
@@ -279,20 +274,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     const startAt = Date.now()
     const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
     const silentLogs = Boolean(useInteractiveOutput)
-    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     let spinnerFrameIndex = 0
-    const progressBar =
-      useInteractiveOutput ?
-        new cliProgress.SingleBar({
-          hideCursor: true,
-          clearOnComplete: true,
-          stopOnComplete: true,
-          barsize: 18,
-          barCompleteChar: '█',
-          barIncompleteChar: '░',
-          format: `${chalk.cyan('{spinner}')} ${chalk.gray('上传')} ${chalk.bold('{percentage}%')} ${chalk.cyan('{bar}')} ${chalk.gray('·')} ${chalk.magenta('{speed}/s')} ${chalk.gray('·')} ${chalk.gray('{elapsed}')}s`,
-        })
-      : null
     const reportEvery = Math.max(1, Math.ceil(totalFiles / 6))
     let lastReportedCompleted = -1
     const debugMetrics: UploadDebugMetrics = {
@@ -302,19 +284,11 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       uploadMs: 0,
     }
 
-    if (progressBar) {
-      progressBar.start(totalFiles, 0, {
-        spinner: spinnerFrames[spinnerFrameIndex],
-        speed: formatBytes(0),
-        elapsed: '0',
-      })
-    }
-
     const updateProgress = () => {
       const elapsedSeconds = (Date.now() - startAt) / 1000
       const speed = elapsedSeconds > 0 ? uploadedBytes / elapsedSeconds : 0
 
-      if (!progressBar) {
+      if (!reporter.interactive) {
         const progressRatio = totalFiles > 0 ? completed / totalFiles : 1
         const percentage = Math.round(progressRatio * 100)
         if (completed === 0 && totalFiles > 0) return
@@ -333,17 +307,20 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         return
       }
 
-      progressBar.update(completed, {
-        spinner: spinnerFrames[spinnerFrameIndex],
-        speed: chalk.magenta(formatBytes(speed)),
-        elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
+      reporter.progress({
+        completed,
+        totalFiles,
+        uploadedBytes,
+        totalBytes,
+        elapsedSeconds,
+        frameIndex: spinnerFrameIndex,
       })
     }
 
     const refreshTimer =
-      progressBar ?
+      reporter.interactive ?
         setInterval(() => {
-          spinnerFrameIndex = (spinnerFrameIndex + 1) % spinnerFrames.length
+          spinnerFrameIndex = (spinnerFrameIndex + 1) % 10
           updateProgress()
         }, 120)
       : null
@@ -444,15 +421,17 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       if (refreshTimer) clearInterval(refreshTimer)
     }
 
-    if (progressBar) {
+    if (reporter.interactive) {
       const elapsedSeconds = (Date.now() - startAt) / 1000
-      const speed = elapsedSeconds > 0 ? uploadedBytes / elapsedSeconds : 0
-      progressBar.update(totalFiles, {
-        spinner: spinnerFrames[spinnerFrameIndex],
-        speed: chalk.magenta(formatBytes(speed)),
-        elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
+      reporter.progress({
+        completed,
+        totalFiles,
+        uploadedBytes,
+        totalBytes,
+        elapsedSeconds,
+        frameIndex: spinnerFrameIndex,
       })
-      progressBar.stop()
+      reporter.clear()
     } else if (failed > 0) {
       console.log(`${getLogSymbol('warning')} 文件上传结束，成功 ${completed - failed}/${totalFiles}，失败 ${failed}`)
     } else {
@@ -461,24 +440,26 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
     debugEntries.push(
       {
-        label: '连接服务器',
+        label: '连接累计',
         durationMs: debugMetrics.connectMs,
       },
       {
-        label: '准备根目录',
+        label: '目录准备累计',
         durationMs: debugMetrics.rootDirMs,
+        group: '目录操作累计',
       },
       {
-        label: '切换子目录',
+        label: '目录切换累计',
         durationMs: debugMetrics.switchDirMs,
+        group: '目录操作累计',
       },
       {
-        label: '传输累计',
+        label: '文件传输合计',
         durationMs: debugMetrics.uploadMs,
-        detail: `${tasks.length} 个文件 · ${safeWindowSize} 路并发`,
+        detail: `${tasks.length} 个文件 · ${safeWindowSize} 路并发 worker 耗时之和`,
       },
       {
-        label: '上传阶段',
+        label: '上传墙钟耗时',
         durationMs: Date.now() - startAt,
       },
     )
@@ -518,13 +499,13 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       label: '扫描本地文件',
       durationMs: Date.now() - collectFilesStartedAt,
       detail: `${allFiles.length} 个文件`,
+      group: '前置操作',
     })
     const totalFiles = allFiles.length
 
-    clearScreen()
     console.log(
       renderPanel(
-        `${getPanelDot('success')} 准备部署`,
+        `${getPanelDot('info')} 准备部署`,
         [
           {
             label: '位置:',
@@ -542,6 +523,14 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
             value: chalk.blue(`${totalFiles} 个 · ${outDir}`),
             preserveValue: true,
           },
+          {
+            label: '策略:',
+            value: renderInlineStats([
+              `并发 ${concurrency}`,
+              singleBack ? `备份 ${singleBackFiles.join(', ')}` : '按需完整备份',
+              `最多尝试 ${maxRetries} 次`,
+            ]),
+          },
         ],
         'info',
       ),
@@ -549,7 +538,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
     const connectConfig: FtpConnectConfig = { host, port, user, password, secure, secureOptions }
     const preflightClient = new Client()
-    const preflightSpinner = useInteractiveOutput ? ora(`连接到 ${displayName}...`).start() : null
+    const preflightSpinner = reporter.spinner(`连接到 ${displayName}...`)
 
     try {
       const preflightConnectStartedAt = Date.now()
@@ -557,6 +546,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       debugEntries.push({
         label: '预检连接',
         durationMs: Date.now() - preflightConnectStartedAt,
+        group: '前置操作',
       })
       if (preflightSpinner) preflightSpinner.stop()
 
@@ -566,6 +556,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         label: '确认目标目录',
         durationMs: Date.now() - ensureTargetStartedAt,
         detail: normalizedUploadPath,
+        group: '前置操作',
       })
 
       const listRemoteStartedAt = Date.now()
@@ -574,6 +565,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         label: '读取远端文件',
         durationMs: Date.now() - listRemoteStartedAt,
         detail: `${fileList.length} 个`,
+        group: '前置操作',
       })
       let backupSummary: BackupSummary | null = null
 
@@ -586,12 +578,13 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
             normalizedAlias,
             singleBackFiles,
             showBackFile,
-            useInteractiveOutput,
+            reporter,
           )
           debugEntries.push({
             label: '执行备份',
             durationMs: Date.now() - backupStartedAt,
             detail: backupSummary ? `${backupSummary.items.length} 个备份文件` : '未生成备份',
+            group: '前置操作',
           })
         } else {
           const shouldBackup = await select({
@@ -607,18 +600,20 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
               normalizedUploadPath,
               normalizedAlias,
               showBackFile,
-              useInteractiveOutput,
+              reporter,
             )
             debugEntries.push({
               label: '执行备份',
               durationMs: Date.now() - backupStartedAt,
               detail: backupSummary ? `${backupSummary.items.length} 个备份文件` : '未生成备份',
+              group: '前置操作',
             })
           } else if (debug) {
             debugEntries.push({
               label: '执行备份',
               durationMs: 0,
               detail: '手动跳过',
+              group: '前置操作',
             })
           }
         }
@@ -627,6 +622,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           label: '执行备份',
           durationMs: 0,
           detail: '远端为空，跳过',
+          group: '前置操作',
         })
       }
 
@@ -654,7 +650,6 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       const avgSpeed = durationSeconds > 0 ? uploadedBytes / durationSeconds : 0
       const accessUrl = normalizedAlias ? resolveDisplayUrl(normalizedAlias, normalizedUploadPath) : ''
 
-      clearScreen()
       const resultRows: TerminalRow[] = [
         {
           label: '结果:',
@@ -668,7 +663,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           value: renderInlineStats([
             `${retryCount} 次重试`,
             formatBytes(uploadedBytes),
-            `${formatBytes(avgSpeed)}/s`,
+            `平均速度 ${formatBytes(avgSpeed)}/s`,
             formatDuration(durationSeconds),
           ]),
         },
@@ -816,8 +811,6 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
     return deployResults
   }
-
-  clearScreen()
 
   const validationErrors = validateOptions()
   if (validationErrors.length > 0) {

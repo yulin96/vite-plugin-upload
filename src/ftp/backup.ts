@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import dayjs from 'dayjs'
 import fs from 'node:fs'
 import path from 'node:path'
-import ora from 'ora'
+import type { TerminalReporter, TerminalSpinner } from '../shared/terminal-reporter'
 import type { BackupSummary } from './types'
 import { createTempDir, createZipFile } from './utils/file'
 import { normalizeRemotePath, normalizeSelectionPath, resolveDisplayUrl } from './utils/path'
@@ -76,10 +76,10 @@ export const createBackupFile = async (
   dir: string,
   alias: string,
   showBackFile = false,
-  useSpinner = true,
+  reporter?: TerminalReporter,
 ): Promise<BackupSummary | null> => {
   const targetUrl = resolveDisplayUrl(alias, dir)
-  const backupSpinner = useSpinner ? ora(`创建备份文件中 ${chalk.yellow(`==> ${targetUrl}`)}`).start() : null
+  const backupSpinner = reporter?.spinner(`创建备份文件中 ${chalk.yellow(`==> ${targetUrl}`)}`) ?? null
   const fileName = `backup_${dayjs().format('YYYYMMDD_HHmmss')}.zip`
   const tempDir = createTempDir('backup-download')
   const zipTempDir = createTempDir('backup-zip')
@@ -95,6 +95,7 @@ export const createBackupFile = async (
     }
 
     if (showBackFile) {
+      backupSpinner?.clear()
       console.log(chalk.cyan(`\n开始备份远程文件，共 ${downloadedFiles.length} 个文件:`))
       downloadedFiles.forEach((file) => console.log(chalk.gray(`  - ${file.remotePath} (${file.size} bytes)`)))
     }
@@ -128,12 +129,12 @@ export const createSingleBackup = async (
   alias: string,
   singleBackFiles: string[],
   showBackFile = false,
-  useSpinner = true,
+  reporter?: TerminalReporter,
 ): Promise<BackupSummary | null> => {
   const timestamp = dayjs().format('YYYYMMDD_HHmmss')
-  const backupSpinner = useSpinner ? ora(`备份指定文件中 ${chalk.yellow(`==> ${resolveDisplayUrl(alias, dir)}`)}`).start() : null
+  const backupSpinner = reporter?.spinner(`备份指定文件中 ${chalk.yellow(`==> ${resolveDisplayUrl(alias, dir)}`)}`) ?? null
   const tempDir = createTempDir('single-backup')
-  let backupProgressSpinner: ReturnType<typeof ora> | undefined
+  let backupProgressSpinner: TerminalSpinner | null = null
 
   try {
     const normalizedSingleBackFiles = singleBackFiles
@@ -153,7 +154,7 @@ export const createSingleBackup = async (
       console.log(chalk.cyan(`\n开始单文件备份，共 ${backupTasks.length} 个文件:`))
       backupTasks.forEach((task) => console.log(chalk.gray(`  - ${task.fileName}`)))
     }
-    if (useSpinner) backupProgressSpinner = ora('正在备份文件...').start()
+    backupProgressSpinner = reporter?.spinner('正在备份文件...') ?? null
 
     const backedUpFiles: string[] = []
     for (const { fileName } of backupTasks) {

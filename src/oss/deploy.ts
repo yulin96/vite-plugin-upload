@@ -1,9 +1,9 @@
 import oss from 'ali-oss'
 import chalk from 'chalk'
-import cliProgress from 'cli-progress'
 import { stat, unlink } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path'
+import { isAbsolute, sep as pathSeparator, relative, resolve } from 'node:path'
 import { printUploadedFiles, renderDebugPanel, type DebugTimingEntry } from '../shared/deploy-output'
+import { TerminalReporter } from '../shared/terminal-reporter'
 import { collectOssUploadFiles } from './files'
 import { deployOssManifest } from './manifest'
 import type { DeployOssOption, DeployOssResult, UploadResult, UploadTask } from './types'
@@ -124,13 +124,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
     return normalizeSlash(resolvedFilePath)
   }
-  const useInteractiveOutput =
-    fancy && Boolean(process.stdout?.isTTY) && Boolean(process.stderr?.isTTY) && !process.env.CI
-
-  const clearViewport = () => {
-    if (!useInteractiveOutput) return
-    process.stdout.write('\x1b[2J\x1b[0f')
-  }
+  const reporter = new TerminalReporter({ fancy })
+  const useInteractiveOutput = reporter.interactive
 
   const uploadFileWithRetry = async (
     client: oss,
@@ -252,6 +247,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       label: '生成上传任务',
       durationMs: Date.now() - taskPrepareStartedAt,
       detail: `${files.length} 个文件`,
+      group: '前置操作',
     })
 
     for (const candidate of taskCandidates) {
@@ -276,37 +272,15 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     const startAt = Date.now()
     const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
     const silentLogs = Boolean(useInteractiveOutput)
-    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     let spinnerFrameIndex = 0
-
-    const progressBar =
-      useInteractiveOutput ?
-        new cliProgress.SingleBar({
-          hideCursor: true,
-          clearOnComplete: true,
-          stopOnComplete: true,
-          barsize: 18,
-          barCompleteChar: '█',
-          barIncompleteChar: '░',
-          format: `${chalk.cyan('{spinner}')} ${chalk.gray('上传')} ${chalk.bold('{percentage}%')} ${chalk.cyan('{bar}')} ${chalk.gray('·')} ${chalk.magenta('{speed}/s')} ${chalk.gray('·')} ${chalk.gray('{elapsed}')}s`,
-        })
-      : null
     const reportEvery = Math.max(1, Math.ceil(totalFiles / 6))
     let lastReportedCompleted = -1
-
-    if (progressBar) {
-      progressBar.start(totalFiles, 0, {
-        spinner: spinnerFrames[spinnerFrameIndex],
-        speed: formatBytes(0),
-        elapsed: '0',
-      })
-    }
 
     const updateProgress = () => {
       const elapsedSeconds = (Date.now() - startAt) / 1000
       const speed = elapsedSeconds > 0 ? uploadedBytes / elapsedSeconds : 0
 
-      if (!progressBar) {
+      if (!reporter.interactive) {
         const progressRatio = totalFiles > 0 ? completed / totalFiles : 1
         const percentage = Math.round(progressRatio * 100)
         if (completed === 0 && totalFiles > 0) return
@@ -323,18 +297,21 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
           lastReportedCompleted = completed
         }
       } else {
-        progressBar.update(completed, {
-          spinner: spinnerFrames[spinnerFrameIndex],
-          speed: chalk.magenta(formatBytes(speed)),
-          elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
+        reporter.progress({
+          completed,
+          totalFiles,
+          uploadedBytes,
+          totalBytes,
+          elapsedSeconds,
+          frameIndex: spinnerFrameIndex,
         })
       }
     }
 
     const refreshTimer =
-      progressBar ?
+      reporter.interactive ?
         setInterval(() => {
-          spinnerFrameIndex = (spinnerFrameIndex + 1) % spinnerFrames.length
+          spinnerFrameIndex = (spinnerFrameIndex + 1) % 10
           updateProgress()
         }, 120)
       : null
@@ -369,15 +346,17 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       if (refreshTimer) clearInterval(refreshTimer)
     }
 
-    if (progressBar) {
+    if (reporter.interactive) {
       const elapsedSeconds = (Date.now() - startAt) / 1000
-      const speed = elapsedSeconds > 0 ? uploadedBytes / elapsedSeconds : 0
-      progressBar.update(totalFiles, {
-        spinner: spinnerFrames[spinnerFrameIndex],
-        speed: chalk.magenta(formatBytes(speed)),
-        elapsed: formatDuration(elapsedSeconds).replace(/s$/, ''),
+      reporter.progress({
+        completed,
+        totalFiles,
+        uploadedBytes,
+        totalBytes,
+        elapsedSeconds,
+        frameIndex: spinnerFrameIndex,
       })
-      progressBar.stop()
+      reporter.clear()
     } else if (failed > 0) {
       console.log(`${getLogSymbol('warning')} 文件上传结束，成功 ${completed - failed}/${totalFiles}，失败 ${failed}`)
     } else {
@@ -421,15 +400,15 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     label: '扫描本地文件',
     durationMs: Date.now() - collectFilesStartedAt,
     detail: `${files.length} 个文件`,
+    group: '前置操作',
   })
 
   const client = new oss({ region, accessKeyId, accessKeySecret, secure, bucket, ...props })
 
-  clearViewport()
   console.log()
   console.log(
     renderPanel(
-      `${getPanelDot('success')} 准备部署`,
+      `${getPanelDot('info')} 准备部署`,
       [
         { label: '位置:', value: chalk.green(`${bucket} · ${region}`) },
         {
@@ -443,6 +422,15 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
           label: '文件:',
           value: chalk.blue(`${files.length} 个 · ${resolvedOutDir}`),
           preserveValue: true,
+        },
+        {
+          label: '策略:',
+          value: renderInlineStats([
+            `并发 ${concurrency}`,
+            `覆盖 ${overwrite ? '允许' : '禁止'}`,
+            manifestFileName ? `清单 ${manifestFileName}` : '清单关闭',
+            `最多尝试 ${retryTimes} 次`,
+          ]),
         },
       ],
       'info',
@@ -522,7 +510,11 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         label: '结果:',
         value:
           failedCount === 0 ?
-            chalk.green(`${successCount}/${finalResults.length} 全部成功`)
+            chalk.green(
+              manifestSummary ?
+                `${results.length} 个产物 + 1 个清单 · 全部成功`
+              : `${successCount}/${finalResults.length} 全部成功`,
+            )
           : chalk.yellow(`成功 ${successCount} 个，失败 ${failedCount} 个`),
       },
       {
@@ -530,7 +522,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         value: renderInlineStats([
           `${retryCount} 次重试`,
           formatBytes(uploadedBytes),
-          `${formatBytes(avgSpeed)}/s`,
+          `平均速度 ${formatBytes(avgSpeed)}/s`,
           formatDuration(durationSeconds),
         ]),
       },
