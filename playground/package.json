@@ -5,7 +5,8 @@
   "scripts": {
     "build": "vite build",
     "build:ftp": "vite build --mode ftp",
-    "build:oss": "vite build --mode oss"
+    "build:oss": "vite build --mode oss",
+    "build:all": "vite build --mode all"
   },
   "devDependencies": {
     "vite": "^8.0.0"
