@@ -188,7 +188,7 @@ deploy-oss --config deploy-oss.config.mjs
 | `skip`            | `'**/index.html'` | Files to skip.                                                            |
 | `overwrite`       | `true`            | Whether to overwrite existing OSS files.                                  |
 | `autoDelete`      | `false`           | Delete local files after successful upload.                               |
-| `manifest`        | `false`           | Generate and upload a manifest inside `outDir`.                            |
+| `manifest`        | `false`           | Generate and upload a manifest; the Vite plugin also injects its full public URL into HTML. |
 | `failOnError`     | `true`            | Fail the build when upload fails.                                         |
 | `debug`           | `false`           | Print debug timing.                                                       |
 | `fancy`           | `true`            | Show styled terminal output.                                              |
@@ -202,6 +202,8 @@ deploy-oss --config deploy-oss.config.mjs
 - FTP supports multiple upload paths and multiple FTP server configs.
 - FTP can back up remote files before uploading.
 - OSS `manifest: true` keeps local files and ignores the default `skip`.
+- The Vite OSS plugin injects `<meta name="vite-plugin-upload-manifest" content="https://...">` into every built HTML entry when manifest is enabled.
+- Manifest HTML injection requires an absolute HTTP(S) `configBase`, or an absolute HTTP(S) `alias` combined with `uploadDir`.
 - OSS manifest file names must be relative paths inside `outDir` and cannot contain `.` or `..` path segments.
 - `deployOss()` results and upload statistics include the manifest upload when a manifest is enabled.
 - OSS `manifest: { run: './index.html' }` writes a runnable entry to the manifest. `run` supports `string` or `string[]`.

@@ -50,3 +50,26 @@ export const resolveUploadedFileUrl = (
   if (alias) return joinUrlPath(alias, objectKey)
   return objectKey
 }
+
+export const resolveRemoteManifestUrl = (
+  fileName: string,
+  uploadDir: string,
+  configBase?: string,
+  alias?: string,
+): string => {
+  const objectKey = normalizeObjectKey(uploadDir, fileName)
+  const value = resolveUploadedFileUrl(fileName, objectKey, configBase, alias)
+
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('OSS manifest HTML injection requires an absolute http(s) configBase or alias URL')
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('OSS manifest HTML injection requires an absolute http(s) configBase or alias URL')
+  }
+
+  return url.href
+}

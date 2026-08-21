@@ -70,6 +70,80 @@ test('keeps upload plugins closed by default', () => {
   expect(config.base).toBe('/')
 })
 
+test('injects an absolute OSS manifest URL into built HTML from configBase', () => {
+  const plugin = vitePluginDeployOss({
+    open: true,
+    accessKeyId: 'id',
+    accessKeySecret: 'secret',
+    bucket: 'bucket',
+    region: 'oss-cn-hangzhou',
+    uploadDir: 'assets',
+    configBase: 'https://cdn.example.com/project/',
+    manifest: { fileName: 'metadata/oss manifest.json' },
+  }) as Plugin
+  const config = { base: '/' }
+
+  if (typeof plugin.config === 'function') {
+    plugin.config(config, { command: 'build', mode: 'production' })
+  }
+  const transform = typeof plugin.transformIndexHtml === 'object' ? plugin.transformIndexHtml.handler : null
+  const result = transform?.call({} as never, '', { path: '/index.html', filename: 'index.html' } as never)
+
+  expect(result).toEqual([
+    {
+      tag: 'meta',
+      attrs: {
+        name: 'vite-plugin-upload-manifest',
+        content: 'https://cdn.example.com/project/metadata/oss%20manifest.json',
+      },
+      injectTo: 'head',
+    },
+  ])
+})
+
+test('injects an absolute OSS manifest URL from alias and uploadDir', () => {
+  const plugin = vitePluginDeployOss({
+    open: true,
+    accessKeyId: 'id',
+    accessKeySecret: 'secret',
+    bucket: 'bucket',
+    region: 'oss-cn-hangzhou',
+    uploadDir: 'project/assets',
+    alias: 'https://oss.example.com/',
+    manifest: true,
+  }) as Plugin
+  const config = { base: '/' }
+
+  if (typeof plugin.config === 'function') {
+    plugin.config(config, { command: 'build', mode: 'production' })
+  }
+  const transform = typeof plugin.transformIndexHtml === 'object' ? plugin.transformIndexHtml.handler : null
+  const result = transform?.call({} as never, '', { path: '/nested/index.html', filename: 'index.html' } as never)
+
+  expect(result).toEqual([
+    expect.objectContaining({
+      attrs: {
+        name: 'vite-plugin-upload-manifest',
+        content: 'https://oss.example.com/project/assets/oss-manifest.json',
+      },
+    }),
+  ])
+})
+
+test('rejects OSS manifest HTML injection without an absolute public URL', () => {
+  expect(() =>
+    vitePluginDeployOss({
+      open: true,
+      accessKeyId: 'id',
+      accessKeySecret: 'secret',
+      bucket: 'bucket',
+      region: 'oss-cn-hangzhou',
+      uploadDir: 'assets',
+      manifest: true,
+    }),
+  ).toThrow('absolute http(s) configBase or alias URL')
+})
+
 test('skips OSS manifest when any upload fails', async () => {
   const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
   writeFileSync(join(outDir, 'a.js'), 'a')
