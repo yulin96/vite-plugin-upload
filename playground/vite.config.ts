@@ -7,11 +7,12 @@ export default defineConfig(({ mode }): UserConfig => {
   const shouldDeployOss = mode === 'oss' || mode === 'oss-debug' || process.env.DEPLOY_OSS === '1'
   const isFtpDebug = mode === 'ftp-debug' || process.env.DEPLOY_FTP_DEBUG === '1'
   const isOssDebug = mode === 'oss-debug' || process.env.DEPLOY_OSS_DEBUG === '1'
+  const isAll = mode == 'all' || process.env.DEPLOY_ALL === '1'
 
   return {
     plugins: [
       vitePluginDeployOss({
-        open: shouldDeployOss,
+        open: shouldDeployOss || isAll,
         debug: isOssDebug,
         // showUploadedFiles: isOssDebug,
         accessKeyId: process.env.zAccessKeyId || '',
@@ -30,7 +31,7 @@ export default defineConfig(({ mode }): UserConfig => {
       }),
 
       vitePluginDeployFtp({
-        open: shouldDeployFtp,
+        open: shouldDeployFtp || isAll,
         debug: isFtpDebug,
         // showUploadedFiles: isFtpDebug,
         uploadPath: '/__test/vite-plugin-upload/ftp/',

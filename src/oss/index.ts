@@ -12,6 +12,21 @@ import {
 
 export { deployOss }
 export const defineDeployConfig = (option: DeployOssOption): DeployOssOption => option
+
+const escapeHtmlAttribute = (value: string): string =>
+  value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+
+const injectManifestMeta = (html: string, manifestUrl: string): string => {
+  const newline = html.includes('\r\n') ? '\r\n' : '\n'
+  const headIndent = html.match(/^([ \t]*)<head\b/im)?.[1] || ''
+  const metaIndent = `${headIndent}${headIndent.includes('\t') ? '\t' : '  '}`
+  const meta = `<meta name="vite-plugin-upload-manifest" content="${escapeHtmlAttribute(manifestUrl)}">`
+  return html.replace(
+    /(<head\b[^>]*>)[ \t]*(?:\r?\n)?/i,
+    `$1${newline}${metaIndent}${meta}${newline}${newline}`,
+  )
+}
+
 export type {
   DeployOssOption,
   DeployOssResult,
@@ -59,19 +74,9 @@ export default function vitePluginDeployOss(option: vitePluginDeployOssOption): 
     },
     transformIndexHtml: {
       order: 'post',
-      handler() {
+      handler(html) {
         if (!upload || buildFailed || !manifestUrl) return
-
-        return [
-          {
-            tag: 'meta',
-            attrs: {
-              name: 'vite-plugin-upload-manifest',
-              content: manifestUrl,
-            },
-            injectTo: 'head',
-          },
-        ]
+        return injectManifestMeta(html, manifestUrl)
       },
     },
     closeBundle: {

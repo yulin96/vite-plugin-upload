@@ -87,18 +87,15 @@ test('injects an absolute OSS manifest URL into built HTML from configBase', () 
     plugin.config(config, { command: 'build', mode: 'production' })
   }
   const transform = typeof plugin.transformIndexHtml === 'object' ? plugin.transformIndexHtml.handler : null
-  const result = transform?.call({} as never, '', { path: '/index.html', filename: 'index.html' } as never)
+  const result = transform?.call(
+    {} as never,
+    '<!doctype html>\n<html>\n  <head>\n    <title>App</title>\n  </head>\n</html>',
+    { path: '/index.html', filename: 'index.html' } as never,
+  )
 
-  expect(result).toEqual([
-    {
-      tag: 'meta',
-      attrs: {
-        name: 'vite-plugin-upload-manifest',
-        content: 'https://cdn.example.com/project/metadata/oss%20manifest.json',
-      },
-      injectTo: 'head',
-    },
-  ])
+  expect(result).toBe(
+    '<!doctype html>\n<html>\n  <head>\n    <meta name="vite-plugin-upload-manifest" content="https://cdn.example.com/project/metadata/oss%20manifest.json">\n\n    <title>App</title>\n  </head>\n</html>',
+  )
 })
 
 test('injects an absolute OSS manifest URL from alias and uploadDir', () => {
@@ -118,16 +115,15 @@ test('injects an absolute OSS manifest URL from alias and uploadDir', () => {
     plugin.config(config, { command: 'build', mode: 'production' })
   }
   const transform = typeof plugin.transformIndexHtml === 'object' ? plugin.transformIndexHtml.handler : null
-  const result = transform?.call({} as never, '', { path: '/nested/index.html', filename: 'index.html' } as never)
+  const result = transform?.call(
+    {} as never,
+    '<html>\r\n\t<head class="app">\r\n\t</head>\r\n</html>',
+    { path: '/nested/index.html', filename: 'index.html' } as never,
+  )
 
-  expect(result).toEqual([
-    expect.objectContaining({
-      attrs: {
-        name: 'vite-plugin-upload-manifest',
-        content: 'https://oss.example.com/project/assets/oss-manifest.json',
-      },
-    }),
-  ])
+  expect(result).toContain(
+    '<head class="app">\r\n\t\t<meta name="vite-plugin-upload-manifest" content="https://oss.example.com/project/assets/oss-manifest.json">\r\n\r\n\t</head>',
+  )
 })
 
 test('rejects OSS manifest HTML injection without an absolute public URL', () => {

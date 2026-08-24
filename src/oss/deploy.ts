@@ -17,7 +17,7 @@ import {
   resolveManifestFileName,
 } from './utils/path'
 import { formatBytes, formatDuration } from './utils/progress'
-import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel } from './utils/terminal'
+import { getLogSymbol, getPanelDot, renderInlineStats, renderPanel, type TerminalRow } from './utils/terminal'
 
 interface UploadBatchExecution {
   results: UploadResult[]
@@ -505,7 +505,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
       }
     }
 
-    const resultRows = [
+    const resultRows: TerminalRow[] = [
       {
         label: '结果:',
         value:
@@ -526,7 +526,11 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
           formatDuration(durationSeconds),
         ]),
       },
-      ...(manifestSummary ? [{ label: '清单:', value: chalk.cyan(manifestSummary), preserveValue: true }] : []),
+      ...(
+        manifestSummary ?
+          [{ label: '清单:', value: chalk.cyan(manifestSummary), preserveValue: true, wrapValue: false }]
+        : []
+      ),
     ]
 
     if (failedCount > 0) {

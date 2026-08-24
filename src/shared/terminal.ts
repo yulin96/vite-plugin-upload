@@ -8,6 +8,7 @@ export interface TerminalRow {
   label: string
   value: string
   preserveValue?: boolean
+  wrapValue?: boolean
 }
 
 type PanelTone = 'info' | 'success' | 'muted' | 'warning' | 'danger'
@@ -46,6 +47,10 @@ export const renderPanel = (
     const prefix = `  ${paddedLabel}  `
     const availableValueWidth = Math.max(8, innerWidth - stringWidth(prefix))
     if (row.preserveValue) {
+      if (row.wrapValue === false) {
+        contentLines.push(`${chalk.gray(prefix)}${row.value}`)
+        continue
+      }
       const wrappedLines = wrapAnsi(row.value, availableValueWidth, {
         hard: true,
         trim: false,
