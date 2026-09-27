@@ -1,0 +1,30 @@
+import { expect, test } from 'vitest'
+import { vitePluginUpload } from './index'
+
+test('creates upload plugins from enabled targets', () => {
+  const plugins = vitePluginUpload({
+    oss: {
+      accessKeyId: 'id',
+      accessKeySecret: 'secret',
+      bucket: 'bucket',
+      region: 'oss-cn-hangzhou',
+      uploadDir: 'dist',
+      open: false,
+    },
+    ftp: {
+      host: 'example.com',
+      user: 'user',
+      password: 'password',
+      uploadPath: '/dist',
+      open: false,
+    },
+  })
+
+  expect(plugins.map((plugin) => plugin.name)).toEqual(['vite-plugin-deploy-oss', 'vite-plugin-deploy-ftp'])
+})
+
+
+test('omits disabled and absent targets', () => {
+  expect(vitePluginUpload({})).toEqual([])
+  expect(vitePluginUpload({ oss: false, ftp: false })).toEqual([])
+})

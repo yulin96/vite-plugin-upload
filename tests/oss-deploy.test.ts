@@ -1,11 +1,10 @@
+import chalk from 'chalk'
+import { stripVTControlCharacters } from 'node:util'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Plugin } from 'vite'
 import { afterEach, expect, test, vi } from 'vitest'
-import { vitePluginUpload } from '../src'
-import vitePluginDeployFtp, { deployFtp } from '../src/ftp'
-import vitePluginDeployOss, { deployOss } from '../src/oss'
+import { deployOss } from '../src/oss/deploy'
 
 const ossMock = vi.hoisted(() => ({
   put: vi.fn(),
@@ -22,122 +21,6 @@ vi.mock('ali-oss', () => ({
 afterEach(() => {
   vi.restoreAllMocks()
   vi.clearAllMocks()
-})
-
-test('creates upload plugins from enabled targets', () => {
-  const plugins = vitePluginUpload({
-    oss: {
-      accessKeyId: 'id',
-      accessKeySecret: 'secret',
-      bucket: 'bucket',
-      region: 'oss-cn-hangzhou',
-      uploadDir: 'dist',
-      open: false,
-    },
-    ftp: {
-      host: 'example.com',
-      user: 'user',
-      password: 'password',
-      uploadPath: '/dist',
-      open: false,
-    },
-  })
-
-  expect(plugins.map((plugin) => plugin.name)).toEqual(['vite-plugin-deploy-oss', 'vite-plugin-deploy-ftp'])
-})
-
-test('keeps upload plugins closed by default', () => {
-  const config = { base: '/' }
-  const ftpPlugin = vitePluginDeployFtp({
-    host: 'example.com',
-    user: 'user',
-    password: 'password',
-    uploadPath: '/dist',
-  }) as Plugin
-  const ossPlugin = vitePluginDeployOss({
-    accessKeyId: 'id',
-    accessKeySecret: 'secret',
-    bucket: 'bucket',
-    region: 'oss-cn-hangzhou',
-    uploadDir: 'dist',
-    configBase: 'https://example.com/assets',
-  }) as Plugin
-
-  expect(typeof ftpPlugin.config === 'function' ? ftpPlugin.config(config, { command: 'build', mode: 'production' }) : null)
-    .toBeUndefined()
-  expect(typeof ossPlugin.config === 'function' ? ossPlugin.config(config, { command: 'build', mode: 'production' }) : null)
-    .toBeUndefined()
-  expect(config.base).toBe('/')
-})
-
-test('injects an absolute OSS manifest URL into built HTML from configBase', () => {
-  const plugin = vitePluginDeployOss({
-    open: true,
-    accessKeyId: 'id',
-    accessKeySecret: 'secret',
-    bucket: 'bucket',
-    region: 'oss-cn-hangzhou',
-    uploadDir: 'assets',
-    configBase: 'https://cdn.example.com/project/',
-    manifest: { fileName: 'metadata/oss manifest.json' },
-  }) as Plugin
-  const config = { base: '/' }
-
-  if (typeof plugin.config === 'function') {
-    plugin.config(config, { command: 'build', mode: 'production' })
-  }
-  const transform = typeof plugin.transformIndexHtml === 'object' ? plugin.transformIndexHtml.handler : null
-  const result = transform?.call(
-    {} as never,
-    '<!doctype html>\n<html>\n  <head>\n    <title>App</title>\n  </head>\n</html>',
-    { path: '/index.html', filename: 'index.html' } as never,
-  )
-
-  expect(result).toBe(
-    '<!doctype html>\n<html>\n  <head>\n    <meta name="vite-plugin-upload-manifest" content="https://cdn.example.com/project/metadata/oss%20manifest.json">\n\n    <title>App</title>\n  </head>\n</html>',
-  )
-})
-
-test('injects an absolute OSS manifest URL from alias and uploadDir', () => {
-  const plugin = vitePluginDeployOss({
-    open: true,
-    accessKeyId: 'id',
-    accessKeySecret: 'secret',
-    bucket: 'bucket',
-    region: 'oss-cn-hangzhou',
-    uploadDir: 'project/assets',
-    alias: 'https://oss.example.com/',
-    manifest: true,
-  }) as Plugin
-  const config = { base: '/' }
-
-  if (typeof plugin.config === 'function') {
-    plugin.config(config, { command: 'build', mode: 'production' })
-  }
-  const transform = typeof plugin.transformIndexHtml === 'object' ? plugin.transformIndexHtml.handler : null
-  const result = transform?.call(
-    {} as never,
-    '<html>\r\n\t<head class="app">\r\n\t</head>\r\n</html>',
-    { path: '/nested/index.html', filename: 'index.html' } as never,
-  )
-
-  expect(result).toContain(
-    '<head class="app">\r\n\t\t<meta name="vite-plugin-upload-manifest" content="https://oss.example.com/project/assets/oss-manifest.json">\r\n\r\n\t</head>',
-  )
-})
-
-test('rejects OSS manifest HTML injection without an absolute public URL', () => {
-  expect(() =>
-    vitePluginDeployOss({
-      open: true,
-      accessKeyId: 'id',
-      accessKeySecret: 'secret',
-      bucket: 'bucket',
-      region: 'oss-cn-hangzhou',
-      uploadDir: 'assets',
-      manifest: true,
-    }),
-  ).toThrow('absolute http(s) configBase or alias URL')
 })
 
 test('skips OSS manifest when any upload fails', async () => {
@@ -239,7 +122,7 @@ test('keeps local empty directories when OSS autoDelete is disabled', async () =
   }
 })
 
-test('prints successfully uploaded OSS files when enabled', async () => {
+test.each([0, 1, 3] as const)('prints successfully uploaded OSS files with color level %i', async (colorLevel) => {
   const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
   writeFileSync(join(outDir, 'a.js'), 'a')
   writeFileSync(join(outDir, 'b.css'), 'b')
@@ -247,7 +130,9 @@ test('prints successfully uploaded OSS files when enabled', async () => {
 
   ossMock.put.mockResolvedValue({ res: { status: 200 } })
 
+  const previousColorLevel = chalk.level
   try {
+    chalk.level = colorLevel
     await deployOss({
       open: true,
       accessKeyId: 'id',
@@ -261,18 +146,19 @@ test('prints successfully uploaded OSS files when enabled', async () => {
       fancy: false,
     })
 
-    const output = consoleLog.mock.calls.map((call) => call.join(' ')).join('\n')
+    const calls = consoleLog.mock.calls.map((call) => stripVTControlCharacters(call.join(' ')))
+    const output = calls.join('\n')
     expect(output).toContain('上传成功文件')
     expect(output).toContain('• a.js · 1 B -> assets/a.js')
     expect(output).toContain('• b.css · 1 B -> assets/b.css')
 
-    const calls = consoleLog.mock.calls.map((call) => call.join(' '))
     const lastUploadedFileIndex = Math.max(
       calls.findIndex((line) => line.includes('• a.js · 1 B -> assets/a.js')),
       calls.findIndex((line) => line.includes('• b.css · 1 B -> assets/b.css')),
     )
     expect(calls[lastUploadedFileIndex + 1]).toBe('')
   } finally {
+    chalk.level = previousColorLevel
     rmSync(outDir, { recursive: true, force: true })
   }
 })
@@ -461,39 +347,6 @@ test('rejects an empty OSS outDir', async () => {
   }
 })
 
-test('rejects an empty FTP outDir before connecting and respects failOnError', async () => {
-  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
-  const option = {
-    open: true,
-    host: 'example.com',
-    user: 'user',
-    password: 'password',
-    uploadPath: '/assets',
-    outDir,
-    autoUpload: true,
-    fancy: false,
-  } as const
-  vi.spyOn(console, 'log').mockImplementation(() => {})
-
-  try {
-    await expect(deployFtp(option)).rejects.toThrow('FTP outDir contains no files to upload')
-    const result = await deployFtp({ ...option, failOnError: false })
-    expect(result).toEqual(
-      expect.objectContaining({
-        success: false,
-        outDir,
-        totalFiles: 0,
-        failedCount: 1,
-      }),
-    )
-    expect(result.targets).toEqual([
-      expect.objectContaining({ name: 'local output', totalFiles: 0, failedCount: 1 }),
-    ])
-  } finally {
-    rmSync(outDir, { recursive: true, force: true })
-  }
-})
-
 test.each([
   './index.html',
   ['./index.html?123'],
@@ -519,6 +372,81 @@ test.each([
 
     const manifest = JSON.parse(readFileSync(join(outDir, 'oss-manifest.json'), 'utf8')) as { run?: unknown }
     expect(manifest.run).toEqual(run)
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+const deploymentOptions = {
+  accessKeyId: 'id', accessKeySecret: 'secret', bucket: 'bucket', region: 'oss-cn-hangzhou',
+  uploadDir: 'assets', fancy: false, retryTimes: 1,
+}
+
+test('uses multipart upload at the threshold and preserves upload headers', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  writeFileSync(join(outDir, 'small.js'), 'a')
+  writeFileSync(join(outDir, 'large.js'), 'abcd')
+  ossMock.put.mockResolvedValue({ res: { status: 200 } })
+  ossMock.multipartUpload.mockResolvedValue({ res: { status: 200 } })
+  try {
+    const result = await deployOss({ ...deploymentOptions, outDir, multipartThreshold: 4, concurrency: 8, overwrite: false, noCache: true })
+    expect(result).toMatchObject({ success: true, uploadedBytes: 5, retryCount: 0 })
+    expect(ossMock.put).toHaveBeenCalledExactlyOnceWith('assets/small.js', join(outDir, 'small.js'), expect.objectContaining({
+      headers: expect.objectContaining({ 'Cache-Control': 'no-cache', 'x-oss-forbid-overwrite': 'true' }),
+    }))
+    expect(ossMock.multipartUpload).toHaveBeenCalledExactlyOnceWith('assets/large.js', join(outDir, 'large.js'), expect.objectContaining({ parallel: 4 }))
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test('retries a failed upload and counts the successful bytes only once', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  writeFileSync(join(outDir, 'a.js'), 'abc')
+  ossMock.put.mockRejectedValueOnce(new Error('connection reset')).mockResolvedValue({ res: { status: 200 } })
+  // Keep filesystem I/O real; accelerate only the upload backoff.
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void) => {
+    queueMicrotask(callback)
+    return {} as ReturnType<typeof setTimeout>
+  }) as typeof setTimeout)
+  try {
+    const result = await deployOss({ ...deploymentOptions, outDir, retryTimes: 2 })
+    expect(ossMock.put).toHaveBeenCalledTimes(2)
+    expect(result).toMatchObject({ success: true, retryCount: 1, uploadedBytes: 3 })
+    expect(result.results[0]).toMatchObject({ success: true, retries: 1 })
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test('keeps failed files locally while deleting only successful uploads', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  writeFileSync(join(outDir, 'good.js'), 'a')
+  writeFileSync(join(outDir, 'bad.js'), 'b')
+  ossMock.put.mockImplementation(async (name: string) => ({ res: { status: name.endsWith('bad.js') ? 500 : 200 } }))
+  try {
+    const result = await deployOss({ ...deploymentOptions, outDir, autoDelete: true, failOnError: false })
+    expect(result.success).toBe(false)
+    expect(result.uploadedBytes).toBe(1)
+    expect(existsSync(join(outDir, 'good.js'))).toBe(false)
+    expect(readFileSync(join(outDir, 'bad.js'), 'utf8')).toBe('b')
+  } finally {
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test('uploads HTML and retains sources when manifest overrides skip and autoDelete', async () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'vite-plugin-upload-'))
+  writeFileSync(join(outDir, 'index.html'), 'html')
+  writeFileSync(join(outDir, 'oss-manifest.json'), 'stale manifest')
+  ossMock.put.mockResolvedValue({ res: { status: 200 } })
+  try {
+    await deployOss({ ...deploymentOptions, outDir, manifest: true, autoDelete: true, skip: '**/*' })
+    expect(ossMock.put.mock.calls.map(([name]) => name)).toEqual(['assets/index.html', 'assets/oss-manifest.json'])
+    expect(readFileSync(join(outDir, 'index.html'), 'utf8')).toBe('html')
+    const manifest = JSON.parse(readFileSync(join(outDir, 'oss-manifest.json'), 'utf8'))
+    expect(manifest.files).toEqual([expect.objectContaining({ file: 'index.html', md5: 'fc35fdc70d5fc69d269883a822c7a53e' })])
+    expect(ossMock.put.mock.calls[1]?.[2]).toMatchObject({ headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } })
   } finally {
     rmSync(outDir, { recursive: true, force: true })
   }

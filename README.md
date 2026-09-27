@@ -222,8 +222,18 @@ Basic checks:
 
 ```bash
 pnpm typecheck
-pnpm test -- --run
+pnpm test:run
 ```
+
+Tests use Vitest 5 (Node.js >= 22.12). Unit tests live alongside source files
+in `src/**/*.test.ts`; integration tests live in `tests/**/*.test.ts` and exercise
+local filesystem workflows with mocked OSS/FTP clients (no remote uploads).
+
+- `pnpm test`: watch mode for all tests.
+- `pnpm test:run`: run all tests once (also used by CI).
+- `pnpm test:unit`: run source-adjacent unit tests.
+- `pnpm test:integration`: run integration tests.
+- `pnpm typecheck`: check production code, tests, and Vitest configuration.
 
 Playground build checks without upload:
 
