@@ -11,17 +11,17 @@ export const ensureTrailingSlash = (value: string): string => {
 }
 
 export const normalizeObjectKey = (targetDir: string, relativeFilePath: string): string =>
-  normalizePathSegments(targetDir, relativeFilePath)
+  normalizePathSegments(targetDir.trim(), relativeFilePath)
 
 export const normalizeManifestFileName = (fileName?: string): string => {
-  const value = normalizeSlash(fileName === undefined ? DEFAULT_MANIFEST_FILE_NAME : fileName)
+  const value = normalizeSlash(fileName === undefined ? DEFAULT_MANIFEST_FILE_NAME : fileName.trim())
   const segments = value.split('/')
   const isAbsolutePath = value.startsWith('/') || value.startsWith('//') || /^[a-zA-Z]:\//.test(value)
   if (isAbsolutePath || segments.some((segment) => segment === '.' || segment === '..')) {
     throw new Error('manifest.fileName must be a relative path inside outDir without "." or ".." segments')
   }
   const normalized = segments.filter(Boolean).join('/')
-  if (!normalized) throw new Error('manifest.fileName must not be empty')
+  if (!normalized.trim()) throw new Error('manifest.fileName must not be empty')
   return normalized
 }
 

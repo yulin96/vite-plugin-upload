@@ -28,6 +28,9 @@ Options:
   --skip <glob>            Glob to skip, can be used multiple times
   --manifest [file]        Enable manifest, optional file name
   --concurrency <number>   Upload concurrency
+  --partSize <bytes>       Multipart part size, default 1048576
+  --multipartConcurrency <number> Concurrent parts per file
+  --multipartThreshold <bytes> Multipart upload threshold
   --retryTimes <number>    Retry times
   --debug                  Show debug timing
   --no-fancy               Disable styled progress
@@ -100,8 +103,10 @@ const parseArgs = (args: string[]): { configPath?: string; option: Partial<Deplo
         break
       case '--concurrency':
       case '--retryTimes':
-      case '--multipartThreshold': {
-        const key = arg.slice(2) as 'concurrency' | 'retryTimes' | 'multipartThreshold'
+      case '--multipartThreshold':
+      case '--partSize':
+      case '--multipartConcurrency': {
+        const key = arg.slice(2) as 'concurrency' | 'retryTimes' | 'multipartThreshold' | 'partSize' | 'multipartConcurrency'
         option[key] = Number(readCliValue(args, i, arg))
         i++
         break

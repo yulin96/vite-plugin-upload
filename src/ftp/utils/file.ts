@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { Readable } from 'node:stream'
 import yazl from 'yazl'
 import type { TempDir } from '../types'
 import { normalizeSlash } from './path'
@@ -70,22 +71,29 @@ export async function createZipFile(sourceDir: string, outputPath: string): Prom
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(outputPath)
     const zipFile = new yazl.ZipFile()
+    const zipOutput = zipFile.outputStream as Readable
 
     const handleError = (error: unknown) => {
       reject(error instanceof Error ? error : new Error(String(error)))
+      zipOutput.destroy()
+      output.destroy()
     }
 
-    output.on('close', resolve)
+    output.on('finish', resolve)
     output.on('error', handleError)
+    zipFile.on('error', handleError)
     zipFile.outputStream.on('error', handleError)
 
     zipFile.outputStream.pipe(output)
 
-    for (const relativePath of getAllFiles(sourceDir)) {
-      const filePath = path.join(sourceDir, relativePath)
-      zipFile.addFile(filePath, normalizeSlash(relativePath))
+    try {
+      for (const relativePath of getAllFiles(sourceDir)) {
+        const filePath = path.join(sourceDir, relativePath)
+        zipFile.addFile(filePath, normalizeSlash(relativePath))
+      }
+      zipFile.end()
+    } catch (error) {
+      handleError(error)
     }
-
-    zipFile.end()
   })
 }

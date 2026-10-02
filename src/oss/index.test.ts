@@ -116,3 +116,20 @@ test('keeps the plugin closed by default without changing config', async () => {
   await hook(plugin.closeBundle).call({} as never)
   expect(deployOss).not.toHaveBeenCalled()
 })
+
+test('recovers uploading and HTML injection after a failed build', async () => {
+  const plugin = vitePluginDeployOss({ ...options, open: true, manifest: true })
+  hook(plugin.config).call({} as never, {}, { command: 'build', mode: 'production' })
+  hook(plugin.configResolved).call({} as never, { root: '/project', build: { outDir: 'dist' } } as never)
+  hook(plugin.buildEnd).call({} as never, new Error('failed build'))
+  await hook(plugin.closeBundle).call({} as never)
+  expect(deployOss).not.toHaveBeenCalled()
+  if (plugin.buildStart) hook(plugin.buildStart).call({} as never, {} as never)
+  hook(plugin.buildEnd).call({} as never)
+  const transform = typeof plugin.transformIndexHtml === 'object' ? plugin.transformIndexHtml.handler : null
+  expect(transform?.call({} as never, '<html><head></head></html>', {} as never)).toContain(
+    'content="https://cdn.example.com/assets/oss-manifest.json"',
+  )
+  await hook(plugin.closeBundle).call({} as never)
+  expect(deployOss).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outDir: resolve('/project', 'dist') }))
+})

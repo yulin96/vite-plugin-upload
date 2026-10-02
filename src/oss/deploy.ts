@@ -3,9 +3,11 @@ import chalk from 'chalk'
 import { stat, unlink } from 'node:fs/promises'
 import { isAbsolute, sep as pathSeparator, relative, resolve } from 'node:path'
 import { printUploadedFiles, renderDebugPanel, type DebugTimingEntry } from '../shared/deploy-output'
+import { mapWithConcurrency } from '../shared/concurrency'
 import { TerminalReporter } from '../shared/terminal-reporter'
+import { createUploadQueue, isHtmlFile } from '../shared/upload-queue'
 import { collectOssUploadFiles } from './files'
-import { deployOssManifest } from './manifest'
+import { deployOssManifest, validateManifestFilePath } from './manifest'
 import type { DeployOssOption, DeployOssResult, UploadResult, UploadTask } from './types'
 import { removeEmptyDirectories } from './utils/file'
 import {
@@ -26,7 +28,7 @@ interface UploadBatchExecution {
 
 const validateOptions = (
   option: DeployOssOption,
-  runtimeOption: Pick<Required<DeployOssOption>, 'retryTimes' | 'concurrency' | 'multipartThreshold'>,
+  runtimeOption: Pick<Required<DeployOssOption>, 'retryTimes' | 'concurrency' | 'multipartThreshold' | 'partSize' | 'multipartConcurrency'>,
 ): string[] => {
   const errors: string[] = []
   if (!option.accessKeyId) errors.push('accessKeyId is required')
@@ -41,6 +43,12 @@ const validateOptions = (
   }
   if (!Number.isFinite(runtimeOption.multipartThreshold) || runtimeOption.multipartThreshold <= 0) {
     errors.push('multipartThreshold must be > 0')
+  }
+  if (!Number.isInteger(runtimeOption.partSize) || runtimeOption.partSize < 100 * 1024) {
+    errors.push('partSize must be an integer >= 102400')
+  }
+  if (!Number.isInteger(runtimeOption.multipartConcurrency) || runtimeOption.multipartConcurrency < 1) {
+    errors.push('multipartConcurrency must be >= 1')
   }
   try {
     resolveManifestFileName(option.manifest)
@@ -73,6 +81,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     concurrency = 5,
     retryTimes = 3,
     multipartThreshold = 10 * 1024 * 1024,
+    partSize = 1024 * 1024,
+    multipartConcurrency = Math.min(concurrency, 4),
     manifest = false,
     outDir = 'dist',
     ...props
@@ -93,6 +103,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     retryTimes,
     concurrency,
     multipartThreshold,
+    partSize,
+    multipartConcurrency,
   })
   if (validationErrors.length > 0) {
     throw new Error(`vite-plugin-deploy-oss 配置错误:\n${validationErrors.map((err) => `  - ${err}`).join('\n')}`)
@@ -134,11 +146,12 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     maxRetries: number = retryTimes,
   ): Promise<UploadResult> => {
     const shouldUseMultipart = task.size >= multipartThreshold
+    let checkpoint: oss.Checkpoint | undefined
     const headers = {
       'x-oss-storage-class': 'Standard',
       'x-oss-object-acl': 'default',
       'Cache-Control':
-        task.cacheControl || (noCache || task.name.endsWith('.html') ? 'no-cache' : 'public, max-age=86400, immutable'),
+        task.cacheControl || (noCache || isHtmlFile(task.relativeFilePath) ? 'no-cache' : 'public, max-age=86400, immutable'),
       'x-oss-forbid-overwrite': overwrite ? 'false' : 'true',
     }
 
@@ -148,8 +161,10 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
           shouldUseMultipart ?
             await client.multipartUpload(task.name, task.filePath, {
               timeout: 600000,
-              partSize: 1024 * 1024,
-              parallel: Math.max(1, Math.min(concurrency, 4)),
+              partSize,
+              parallel: multipartConcurrency,
+              checkpoint,
+              progress: async (_percentage: number, currentCheckpoint: oss.Checkpoint) => { checkpoint = currentCheckpoint },
               headers,
             })
           : await client.put(task.name, task.filePath, {
@@ -178,6 +193,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
         throw new Error(`Upload failed with status: ${result.res.status}`)
       } catch (error) {
+        const uploadError = error as { name?: string; code?: string }
+        if (uploadError?.name === 'abort' || uploadError?.code === 'NoSuchUpload') checkpoint = undefined
         if (attempt === maxRetries) {
           if (!silentLogs) {
             const reason = error instanceof Error ? error.message : String(error)
@@ -227,11 +244,12 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     let completed = 0
     let failed = 0
     let uploadedBytes = 0
-    let retries = 0
 
     const taskPrepareStartedAt = Date.now()
-    const taskCandidates = await Promise.all(
-      files.map(async (relativeFilePath) => {
+    const taskCandidates = await mapWithConcurrency(
+      files,
+      concurrency,
+      async (relativeFilePath) => {
         const filePath = resolveOutDirFile(relativeFilePath)
         const name = normalizeObjectKey(normalizedUploadDir, relativeFilePath)
 
@@ -241,7 +259,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         } catch (error) {
           return { task: null, error: error as Error, filePath, relativeFilePath, name }
         }
-      }),
+      },
     )
     debugEntries.push({
       label: '生成上传任务',
@@ -270,7 +288,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
 
     const totalBytes = tasks.reduce((sum, task) => sum + task.size, 0)
     const startAt = Date.now()
-    const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
+    const entryCount = tasks.filter((task) => isHtmlFile(task.relativeFilePath)).length
+    const safeWindowSize = Math.max(1, Math.min(windowSize, Math.max(entryCount, tasks.length - entryCount)))
     const silentLogs = Boolean(useInteractiveOutput)
     let spinnerFrameIndex = 0
     const reportEvery = Math.max(1, Math.ceil(totalFiles / 6))
@@ -315,19 +334,17 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
           updateProgress()
         }, 120)
       : null
-    let currentIndex = 0
+    const queue = createUploadQueue(tasks, (task) => isHtmlFile(task.relativeFilePath), failed > 0)
 
     const worker = async () => {
       while (true) {
-        const index = currentIndex++
-        if (index >= tasks.length) return
-
-        const task = tasks[index]
+        const task = await queue.next()
+        if (!task) return
         updateProgress()
 
         const result = await uploadFileWithRetry(client, task, silentLogs)
+        queue.complete(task, result.success)
         completed++
-        retries += result.retries
         if (result.success) {
           uploadedBytes += result.size
         } else {
@@ -345,6 +362,14 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
     } finally {
       if (refreshTimer) clearInterval(refreshTimer)
     }
+
+    for (const task of queue.skippedEntries()) {
+      results.push({ success: false, file: task.filePath, relativeFilePath: task.relativeFilePath, name: task.name,
+        size: task.size, retries: 0, error: new Error('HTML upload skipped because an asset failed') })
+      completed++
+      failed++
+    }
+    updateProgress()
 
     if (reporter.interactive) {
       const elapsedSeconds = (Date.now() - startAt) / 1000
@@ -393,6 +418,7 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
   let files: string[]
   try {
     files = await collectOssUploadFiles(resolvedOutDir, effectiveSkip, manifestFileName)
+    if (manifestFileName) await validateManifestFilePath(resolvedOutDir, resolveOutDirFile(manifestFileName))
   } catch (error) {
     return localOutputFailure(error instanceof Error ? error : new Error(String(error)))
   }
@@ -468,6 +494,8 @@ export const deployOss = async (option: DeployOssOption): Promise<DeployOssResul
         configBase: normalizedConfigBase,
         alias: normalizedAlias,
         debug,
+        outDir: resolvedOutDir,
+        concurrency,
         resolveOutDirFile,
         upload: (task) => uploadSingleTask(client, task),
       })

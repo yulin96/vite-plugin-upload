@@ -3,6 +3,8 @@ import { Client } from 'basic-ftp'
 import chalk from 'chalk'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
+import { mapWithConcurrency } from '../shared/concurrency'
+import { createUploadQueue, isHtmlFile } from '../shared/upload-queue'
 import { printUploadedFiles, renderDebugPanel, type DebugTimingEntry } from '../shared/deploy-output'
 import { TerminalReporter } from '../shared/terminal-reporter'
 import { createBackupFile, createSingleBackup, renderBackupPanel } from './backup'
@@ -38,6 +40,13 @@ interface UploadDebugMetrics {
 interface UploadBatchExecution {
   results: UploadResult[]
   debugEntries: DebugTimingEntry[]
+}
+
+interface LocalUploadFile {
+  filePath: string
+  relativeFilePath: string
+  size: number
+  error?: Error
 }
 
 interface ReusableUploadClient {
@@ -117,6 +126,12 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       }
 
       const validConfigCount = ftpConfigs.filter(validateFtpConfig).length
+      if (autoUpload && validConfigCount > 1 && !defaultFtp) {
+        errors.push('autoUpload with multiple FTP servers requires defaultFtp')
+      }
+      if (autoUpload && defaultFtp && !validateFtpConfig(ftpConfigs.find((ftp) => ftp.name === defaultFtp) || {})) {
+        errors.push('autoUpload requires a valid defaultFtp')
+      }
       if (validConfigCount === 0) {
         errors.push('at least one ftp config requires host, user and password')
       }
@@ -211,7 +226,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
   const uploadFilesInBatches = async (context: {
     connectConfig: FtpConnectConfig
-    files: string[]
+    files: LocalUploadFile[]
     targetDir: string
     windowSize?: number
     reusableClient?: ReusableUploadClient
@@ -225,22 +240,14 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     let completed = 0
     let failed = 0
     let uploadedBytes = 0
-    let retries = 0
 
     const taskPrepareStartedAt = Date.now()
-    const taskCandidates = await Promise.all(
-      files.map(async (relativeFilePath) => {
-        const filePath = normalizeSlash(path.resolve(outDir, relativeFilePath))
-        const remotePath = normalizeRemotePath(targetDir, relativeFilePath)
-
-        try {
-          const fileStats = await stat(filePath)
-          return { task: { filePath, relativeFilePath, remotePath, size: fileStats.size } as UploadTask }
-        } catch (error) {
-          return { task: null, error: error as Error, filePath, relativeFilePath, remotePath }
-        }
-      }),
-    )
+    const taskCandidates = files.map((file) => {
+      const remotePath = normalizeRemotePath(targetDir, file.relativeFilePath)
+      return file.error ?
+        { task: null, ...file, remotePath }
+        : { task: { filePath: file.filePath, relativeFilePath: file.relativeFilePath, remotePath, size: file.size } as UploadTask }
+    })
 
     for (const candidate of taskCandidates) {
       if (candidate.task) {
@@ -272,7 +279,8 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
     const totalBytes = tasks.reduce((sum, task) => sum + task.size, 0)
     const startAt = Date.now()
-    const safeWindowSize = Math.max(1, Math.min(windowSize, tasks.length || 1))
+    const entryCount = tasks.filter((task) => isHtmlFile(task.relativeFilePath)).length
+    const safeWindowSize = Math.max(1, Math.min(windowSize, Math.max(entryCount, tasks.length - entryCount)))
     const silentLogs = Boolean(useInteractiveOutput)
     let spinnerFrameIndex = 0
     const reportEvery = Math.max(1, Math.ceil(totalFiles / 6))
@@ -324,20 +332,20 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           updateProgress()
         }, 120)
       : null
-    let currentTaskIndex = 0
+    const queue = createUploadQueue(tasks, (task) => isHtmlFile(task.relativeFilePath), failed > 0)
+    const ensuredRelativeDirs = new Set<string>()
 
     const runWorker = async (seed?: ReusableUploadClient) => {
       const client = seed?.client ?? new Client()
       const ownsClient = !seed
       let connected = Boolean(seed)
       let currentRelativeDir = ''
-      let rooted = false
-      const ensuredRelativeDirs = new Set<string>()
+      let rooted = Boolean(seed)
 
       const ensureConnected = async () => {
         if (connected) return
         const connectStartedAt = Date.now()
-        await connectWithRetry(client, connectConfig, maxRetries, retryDelay, true)
+        await client.access({ ...connectConfig, secure: connectConfig.secure ?? false })
         connected = true
         rooted = false
         currentRelativeDir = ''
@@ -347,7 +355,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
       const ensureRootDir = async () => {
         if (rooted) return
         const rootStartedAt = Date.now()
-        await client.ensureDir(normalizedTargetDir)
+        await client.cd(normalizedTargetDir)
         rooted = true
         currentRelativeDir = ''
         debugMetrics.rootDirMs += Date.now() - rootStartedAt
@@ -360,7 +368,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         if (currentRelativeDir === relativeDir) return
 
         const switchStartedAt = Date.now()
-        await client.cd(normalizedTargetDir)
+        if (currentRelativeDir) await client.cd(normalizedTargetDir)
         if (relativeDir) {
           if (!ensuredRelativeDirs.has(relativeDir)) {
             await client.ensureDir(relativeDir)
@@ -377,14 +385,12 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
         connected = false
         rooted = false
         currentRelativeDir = ''
-        ensuredRelativeDirs.clear()
       }
 
       try {
         while (true) {
-          const taskIndex = currentTaskIndex++
-          if (taskIndex >= tasks.length) return
-          const task = tasks[taskIndex]
+          const task = await queue.next()
+          if (!task) return
           updateProgress()
 
           const result = await uploadFileWithRetry(task, {
@@ -398,8 +404,8 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
             debugMetrics,
           })
 
+          queue.complete(task, result.success)
           completed++
-          retries += result.retries
           if (result.success) uploadedBytes += result.size
           else failed++
           results.push(result)
@@ -414,12 +420,20 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
 
     try {
       const newClientWorkerCount = reusableClient ? safeWindowSize - 1 : safeWindowSize
-      const workers = Array.from({ length: newClientWorkerCount }, () => runWorker())
-      if (reusableClient) workers.push(runWorker(reusableClient))
+      const workers = reusableClient ? [runWorker(reusableClient)] : []
+      workers.push(...Array.from({ length: newClientWorkerCount }, () => runWorker()))
       await Promise.all(workers)
     } finally {
       if (refreshTimer) clearInterval(refreshTimer)
     }
+
+    for (const task of queue.skippedEntries()) {
+      results.push({ success: false, file: task.filePath, relativeFilePath: task.relativeFilePath, name: task.remotePath,
+        size: task.size, retries: 0, error: new Error('HTML upload skipped because an asset failed') })
+      completed++
+      failed++
+    }
+    updateProgress()
 
     if (reporter.interactive) {
       const elapsedSeconds = (Date.now() - startAt) / 1000
@@ -486,19 +500,11 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     const resultName = normalizedUploadPaths.length > 1 ? `${displayName} ${normalizedUploadPath}` : displayName
     const startTime = Date.now()
     const debugEntries: DebugTimingEntry[] = []
-    const collectFilesStartedAt = Date.now()
-    let allFiles: string[]
-    try {
-      allFiles = getFtpUploadFiles(outDir)
-    } catch (error) {
-      const scanError = error instanceof Error ? error : new Error(String(error))
-      console.log(`${getLogSymbol('danger')} ${scanError.message}`)
-      return { name: resultName, totalFiles: 0, failedCount: 1, error: scanError }
-    }
+    const allFiles = localFiles
     debugEntries.push({
-      label: '扫描本地文件',
-      durationMs: Date.now() - collectFilesStartedAt,
-      detail: `${allFiles.length} 个文件`,
+      label: '准备本地文件',
+      durationMs: localPrepareMs,
+      detail: `${allFiles.length} 个文件 · 复用文件列表`,
       group: '前置操作',
     })
     const totalFiles = allFiles.length
@@ -579,6 +585,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
             singleBackFiles,
             showBackFile,
             reporter,
+            fileList,
           )
           debugEntries.push({
             label: '执行备份',
@@ -586,7 +593,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
             detail: backupSummary ? `${backupSummary.items.length} 个备份文件` : '未生成备份',
             group: '前置操作',
           })
-        } else {
+        } else if (!autoUpload) {
           const shouldBackup = await select({
             message: `是否备份 ${displayName} 的远程文件`,
             choices: ['否', '是'],
@@ -777,7 +784,9 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
           return []
         }
 
-        selectedConfigs = (await checkbox({
+        if (autoUpload) {
+          selectedConfigs = validConfigs
+        } else selectedConfigs = (await checkbox({
           message: '选择要上传的FTP服务器（可多选）',
           choices: validConfigs.map((ftp) => ({
             name: ftp.name || ftp.host || '未命名FTP',
@@ -818,8 +827,17 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
   }
 
   let localOutputError: Error | undefined
+  let localFiles: LocalUploadFile[] = []
+  const localPrepareStartedAt = Date.now()
   try {
-    getFtpUploadFiles(outDir)
+    localFiles = await mapWithConcurrency(getFtpUploadFiles(outDir), concurrency, async (relativeFilePath) => {
+      const filePath = normalizeSlash(path.resolve(outDir, relativeFilePath))
+      try {
+        return { relativeFilePath, filePath, size: (await stat(filePath)).size }
+      } catch (error) {
+        return { relativeFilePath, filePath, size: 0, error: error instanceof Error ? error : new Error(String(error)) }
+      }
+    })
   } catch (error) {
     localOutputError = error instanceof Error ? error : new Error(String(error))
   }
@@ -844,6 +862,7 @@ export const deployFtp = async (option: DeployFtpOption): Promise<DeployFtpResul
     }
   }
 
+  const localPrepareMs = Date.now() - localPrepareStartedAt
   const deployResults = await deployToFtp()
   const failedTargets = deployResults.filter((target) => target.failedCount > 0)
   const totalFiles = deployResults.reduce((sum, target) => sum + target.totalFiles, 0)

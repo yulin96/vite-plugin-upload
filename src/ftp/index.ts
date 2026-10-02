@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import type { Plugin, ResolvedConfig } from 'vite'
 import { deployFtp } from './deploy'
-import type { DeployFtpOption, vitePluginDeployFtpOption } from './types'
+import type { DeployFtpOption, DeployFtpResult, vitePluginDeployFtpOption } from './types'
 import { normalizeSlash } from './utils/path'
 
 export { deployFtp }
@@ -22,7 +22,10 @@ export type {
   vitePluginDeployFtpOption,
 } from './types'
 
-export default function vitePluginDeployFtp(option: vitePluginDeployFtpOption): Plugin {
+export default function vitePluginDeployFtp(
+  option: vitePluginDeployFtpOption,
+  onDeployed?: (result: DeployFtpResult) => void | Promise<void>,
+): Plugin {
   const { open = false } = option || {}
 
   let buildFailed = false
@@ -34,6 +37,9 @@ export default function vitePluginDeployFtp(option: vitePluginDeployFtpOption): 
     name: 'vite-plugin-deploy-ftp',
     apply: 'build',
     enforce: 'post',
+    buildStart() {
+      buildFailed = false
+    },
     buildEnd(error) {
       if (error) buildFailed = true
     },
@@ -53,10 +59,11 @@ export default function vitePluginDeployFtp(option: vitePluginDeployFtpOption): 
       async handler() {
         if (!open || !upload || buildFailed || !resolvedConfig) return
 
-        await deployFtp({
+        const result = await deployFtp({
           ...option,
           outDir,
         })
+        await onDeployed?.(result)
       },
     },
   }

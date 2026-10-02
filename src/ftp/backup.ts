@@ -1,4 +1,4 @@
-import { FileType, type Client } from 'basic-ftp'
+import { FileType, type Client, type FileInfo } from 'basic-ftp'
 import chalk from 'chalk'
 import dayjs from 'dayjs'
 import fs from 'node:fs'
@@ -115,11 +115,6 @@ export const createBackupFile = async (
   } finally {
     tempDir.cleanup()
     zipTempDir.cleanup()
-    try {
-      if (fs.existsSync(zipFilePath)) fs.rmSync(zipFilePath)
-    } catch (error) {
-      console.warn(chalk.yellow('⚠ 清理zip文件失败'), error)
-    }
   }
 }
 
@@ -130,6 +125,7 @@ export const createSingleBackup = async (
   singleBackFiles: string[],
   showBackFile = false,
   reporter?: TerminalReporter,
+  remoteFiles?: FileInfo[],
 ): Promise<BackupSummary | null> => {
   const timestamp = dayjs().format('YYYYMMDD_HHmmss')
   const backupSpinner = reporter?.spinner(`备份指定文件中 ${chalk.yellow(`==> ${resolveDisplayUrl(alias, dir)}`)}`) ?? null
@@ -142,7 +138,7 @@ export const createSingleBackup = async (
       .map((fileName) => fileName.split('/').filter((segment) => segment && segment !== '.').join('/'))
       .filter((fileName) => !fileName.split('/').includes('..'))
       .filter(Boolean)
-    const backupTasks = normalizedSingleBackFiles.map((fileName) => ({ fileName }))
+    const backupTasks = Array.from(new Set(normalizedSingleBackFiles)).map((fileName) => ({ fileName }))
 
     if (backupTasks.length === 0) {
       backupSpinner?.warn('未找到需要备份的文件')
@@ -157,8 +153,29 @@ export const createSingleBackup = async (
     backupProgressSpinner = reporter?.spinner('正在备份文件...') ?? null
 
     const backedUpFiles: string[] = []
+    const directoryListings = new Map<string, FileInfo[]>()
+    if (remoteFiles) directoryListings.set(dir, remoteFiles)
+    const listDirectory = async (remoteDir: string) => {
+      let entries = directoryListings.get(remoteDir)
+      if (!entries) {
+        entries = await client.list(remoteDir)
+        directoryListings.set(remoteDir, entries)
+      }
+      return entries
+    }
     for (const { fileName } of backupTasks) {
       try {
+        const parts = fileName.split('/')
+        let remoteDir = dir
+        let parentExists = true
+        for (const segment of parts.slice(0, -1)) {
+          if (!(await listDirectory(remoteDir)).some((entry) => entry.name === segment && entry.type === FileType.Directory)) {
+            parentExists = false
+            break
+          }
+          remoteDir = normalizeRemotePath(remoteDir, segment)
+        }
+        if (!parentExists || !(await listDirectory(remoteDir)).some((entry) => entry.name === parts.at(-1))) continue
         const localTempPath = path.join(tempDir.path, fileName)
         const localTempDir = path.dirname(localTempPath)
         if (!fs.existsSync(localTempDir)) fs.mkdirSync(localTempDir, { recursive: true })
@@ -176,7 +193,7 @@ export const createSingleBackup = async (
         await client.uploadFrom(localTempPath, backupRemotePath)
         backedUpFiles.push(resolveDisplayUrl(alias, backupRemotePath))
       } catch (error) {
-        console.warn(chalk.yellow(`备份文件 ${fileName} 失败:`), error instanceof Error ? error.message : error)
+        throw new Error(`Failed to back up ${fileName}: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
       }
     }
 
@@ -184,7 +201,7 @@ export const createSingleBackup = async (
       backupProgressSpinner?.stop()
       return { title: '备份完成', items: backedUpFiles }
     }
-    backupProgressSpinner?.fail('所有文件备份失败')
+    backupProgressSpinner?.warn('未找到可备份的远程文件')
     return null
   } catch (error) {
     if (backupProgressSpinner) backupProgressSpinner.fail('备份过程中发生错误')

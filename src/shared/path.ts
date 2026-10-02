@@ -1,4 +1,4 @@
-export const normalizeSlash = (value: string): string => value.replace(/\\/g, '/').trim()
+export const normalizeSlash = (value: string): string => value.replace(/\\/g, '/')
 
 export const normalizePathSegments = (...values: Array<string | undefined>): string =>
   values
@@ -8,7 +8,7 @@ export const normalizePathSegments = (...values: Array<string | undefined>): str
     .join('/')
 
 const splitUrlLikeBase = (value: string): { prefix: string; path: string } => {
-  const normalized = normalizeSlash(value)
+  const normalized = normalizeSlash(value.trim())
   const protocolMatch = normalized.match(/^([a-zA-Z][a-zA-Z\d+.-]*:\/\/[^/]+)(.*)$/)
   if (protocolMatch) {
     return { prefix: protocolMatch[1], path: protocolMatch[2] || '' }

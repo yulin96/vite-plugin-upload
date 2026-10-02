@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import type { Plugin, ResolvedConfig } from 'vite'
 import { deployOss } from './deploy'
-import type { DeployOssOption, vitePluginDeployOssOption } from './types'
+import type { DeployOssOption, DeployOssResult, vitePluginDeployOssOption } from './types'
 import {
   ensureTrailingSlash,
   normalizeSlash,
@@ -39,7 +39,10 @@ export type {
   vitePluginDeployOssOption,
 } from './types'
 
-export default function vitePluginDeployOss(option: vitePluginDeployOssOption): Plugin {
+export default function vitePluginDeployOss(
+  option: vitePluginDeployOssOption,
+  onDeployed?: (result: DeployOssResult) => void | Promise<void>,
+): Plugin {
   const { open = false, configBase, alias, manifest, uploadDir } = option || {}
 
   let buildFailed = false
@@ -58,6 +61,9 @@ export default function vitePluginDeployOss(option: vitePluginDeployOssOption): 
     name: 'vite-plugin-deploy-oss',
     apply: 'build',
     enforce: 'post',
+    buildStart() {
+      buildFailed = false
+    },
     buildEnd(error) {
       if (error) buildFailed = true
     },
@@ -85,11 +91,12 @@ export default function vitePluginDeployOss(option: vitePluginDeployOssOption): 
       async handler() {
         if (!open || !upload || buildFailed || !resolvedConfig) return
 
-        await deployOss({
+        const result = await deployOss({
           ...option,
           configBase: normalizedConfigBase,
           outDir,
         })
+        await onDeployed?.(result)
       },
     },
   }

@@ -36,6 +36,8 @@ export interface vitePluginDeployOssOption extends Omit<
   concurrency?: number
   retryTimes?: number
   multipartThreshold?: number
+  partSize?: number
+  multipartConcurrency?: number
   manifest?: ManifestConfig
 }
 

@@ -3,7 +3,7 @@ import { normalizePathSegments, normalizeUrlLikeBase } from '../../shared/path'
 export { normalizePathSegments, normalizeSlash, normalizeUrlLikeBase } from '../../shared/path'
 
 export const normalizeFtpUploadPath = (targetPath: string): string => {
-  const normalized = normalizePathSegments(targetPath)
+  const normalized = normalizePathSegments(targetPath.trim())
   return normalized ? `/${normalized}` : '/'
 }
 

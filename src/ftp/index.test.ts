@@ -46,3 +46,16 @@ test('keeps the plugin closed by default without changing config', async () => {
   await hook(plugin.closeBundle).call({} as never)
   expect(deployFtp).not.toHaveBeenCalled()
 })
+
+test('recovers the same plugin instance after a failed build', async () => {
+  const plugin = vitePluginDeployFtp({ ...options, open: true })
+  hook(plugin.config).call({} as never, {}, { command: 'build', mode: 'production' })
+  hook(plugin.configResolved).call({} as never, { root: '/project', build: { outDir: 'dist' } } as never)
+  hook(plugin.buildEnd).call({} as never, new Error('failed build'))
+  await hook(plugin.closeBundle).call({} as never)
+  expect(deployFtp).not.toHaveBeenCalled()
+  if (plugin.buildStart) hook(plugin.buildStart).call({} as never, {} as never)
+  hook(plugin.buildEnd).call({} as never)
+  await hook(plugin.closeBundle).call({} as never)
+  expect(deployFtp).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outDir: resolve('/project', 'dist') }))
+})

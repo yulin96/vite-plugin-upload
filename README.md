@@ -161,7 +161,7 @@ deploy-oss --config deploy-oss.config.mjs
 | `password`        | -                | FTP password.                                                             |
 | `alias`           | -                | Public URL used in terminal output.                                       |
 | `secure`          | `false`          | Enable FTPS. Use `true` or `'implicit'` when the server requires it.       |
-| `autoUpload`      | `false`          | Skip upload confirmation.                                                 |
+| `autoUpload`      | `false`          | Run without interactive prompts; selected-file backup remains enabled when configured. |
 | `singleBack`      | `false`          | Back up selected files before upload.                                     |
 | `singleBackFiles` | `['index.html']` | Files to back up when `singleBack` is enabled.                            |
 | `ftps`            | -                | Multiple FTP server configs.                                              |
@@ -182,6 +182,10 @@ deploy-oss --config deploy-oss.config.mjs
 | `bucket`          | -                 | OSS bucket name.                                                          |
 | `region`          | -                 | OSS region, e.g. `oss-cn-beijing`.                                        |
 | `outDir`          | `'dist'`          | Local directory for CLI or direct API upload.                             |
+| `concurrency`     | `5`               | Number of simultaneous file uploads.                                      |
+| `multipartThreshold` | `10485760`     | Use multipart upload at or above this file size in bytes.                 |
+| `partSize`        | `1048576`         | Multipart part size in bytes; integer >= 102400.                          |
+| `multipartConcurrency` | `min(concurrency, 4)` | Concurrent parts per multipart file, configured independently of file concurrency. |
 | `uploadDir`       | -                 | Target directory in OSS.                                                  |
 | `configBase`      | -                 | Updates Vite asset base and manifest URLs.                                |
 | `alias`           | -                 | URL alias used by manifest.                                               |
@@ -201,10 +205,17 @@ deploy-oss --config deploy-oss.config.mjs
 - An enabled deployment fails when `outDir` is missing, unreadable, not a directory, or contains no files to upload.
 - FTP supports multiple upload paths and multiple FTP server configs.
 - FTP can back up remote files before uploading.
+- With FTP `autoUpload: true`, multiple valid servers require `defaultFtp`. A single valid server is selected automatically; full backup is skipped unless selected-file backup is explicitly enabled with `singleBack`.
+- Missing selected backup files are skipped. A listing, download or backup upload error stops that target before application files are overwritten, including when `failOnError: false` returns a failed result.
+- FTP scans and prepares local files once per deployment and reuses them for every target. Keep the output directory unchanged during deployment.
+- FTP and OSS upload resources first, then HTML only if all resources succeeded; OSS uploads its manifest last. This ordering reduces partial-release risks but is not a complete atomic remote deployment.
+- In `vitePluginUpload()` with both uploads enabled, OSS `autoDelete` runs only after both deployments succeed. FTP failure or cancellation preserves the local OSS files.
+- OSS multipart retries resume from the latest checkpoint in the current deployment. Restarting the process starts a new upload.
 - OSS `manifest: true` keeps local files and ignores the default `skip`.
 - The Vite OSS plugin injects `<meta name="vite-plugin-upload-manifest" content="https://...">` into every built HTML entry when manifest is enabled.
 - Manifest HTML injection requires an absolute HTTP(S) `configBase`, or an absolute HTTP(S) `alias` combined with `uploadDir`.
 - OSS manifest file names must be relative paths inside `outDir` and cannot contain `.` or `..` path segments.
+- OSS manifest paths must not traverse symbolic links below `outDir`.
 - `deployOss()` results and upload statistics include the manifest upload when a manifest is enabled.
 - OSS `manifest: { run: './index.html' }` writes a runnable entry to the manifest. `run` supports `string` or `string[]`.
 - OSS `configBase` changes Vite output paths and manifest URLs.
